@@ -23,12 +23,23 @@ AI를 활용한 지리과 서술형 및 백지도형 답안 자동 채점 시스
 
 ### 2. 환경 변수 설정
 
-`.env` 파일에 필요한 API 키를 설정하세요:
+`.env.example` 파일을 복사하여 `.env` 파일을 생성하고 API 키를 설정하세요:
+
+```bash
+# Windows PowerShell
+copy .env.example .env
+
+# 또는 수동으로 .env.example을 .env로 복사
+```
+
+그런 다음 `.env` 파일을 열어서 실제 API 키로 교체하세요:
 
 ```env
-GOOGLE_API_KEY=your_google_api_key_here
-GROQ_API_KEY=your_groq_api_key_here
+GOOGLE_API_KEY=your_actual_google_api_key_here
+GROQ_API_KEY=your_actual_groq_api_key_here
 ```
+
+**주의**: `.env` 파일은 Git에 추가하지 마세요. 이미 `.gitignore`에 포함되어 있습니다.
 
 ### 3. 애플리케이션 실행
 
