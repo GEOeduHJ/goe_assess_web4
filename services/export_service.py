@@ -127,6 +127,8 @@ class ExportService:
                     row[f'{element_name}_점수'] = element.score
                     row[f'{element_name}_만점'] = element.max_score
                     row[f'{element_name}_백분율'] = round(element.percentage, 1)
+                    row[f'{element_name}_판단근거'] = getattr(element, 'reasoning', '') or '[판단근거 없음]'
+                    row[f'{element_name}_피드백'] = getattr(element, 'feedback', '') or '[피드백 없음]'
                 
                 main_data.append(row)
             
@@ -167,7 +169,8 @@ class ExportService:
                         '획득점수': element.score,
                         '만점': element.max_score,
                         '백분율': round(element.percentage, 1),
-                        '요소별피드백': element.feedback or '[피드백 없음]',
+                        '판단근거': getattr(element, 'reasoning', '') or '[판단근거 없음]',
+                        '요소별피드백': getattr(element, 'feedback', '') or '[피드백 없음]',
                         '채점시간(초)': round(result.grading_time_seconds, 1)
                     }
                     element_data.append(row)

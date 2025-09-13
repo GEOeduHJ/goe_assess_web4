@@ -18,11 +18,13 @@ class ElementScore:
         score: Points awarded for this element
         max_score: Maximum possible points for this element
         feedback: Detailed feedback for this element
+        reasoning: Reasoning for the score given
     """
     element_name: str
     score: int
     max_score: int
     feedback: str = ""
+    reasoning: str = ""
     
     def __post_init__(self):
         """Validate element score data after initialization."""
@@ -106,24 +108,27 @@ class GradingResult:
         self.total_score = sum(element.score for element in self.element_scores)
         self.total_max_score = sum(element.max_score for element in self.element_scores)
     
-    def add_element_score(self, element_name: str, score: int, max_score: int, feedback: str = ""):
+    def add_element_score(self, element_name: str, score: int, max_score: int, feedback: str = "", reasoning: str = ""):
         """Add a score for an evaluation element."""
         element_score = ElementScore(
             element_name=element_name,
             score=score,
             max_score=max_score,
-            feedback=feedback
+            feedback=feedback,
+            reasoning=reasoning
         )
         self.element_scores.append(element_score)
         self._calculate_totals()
     
-    def update_element_score(self, element_name: str, score: int, feedback: str = ""):
+    def update_element_score(self, element_name: str, score: int, feedback: str = "", reasoning: str = ""):
         """Update the score for a specific element."""
         for element_score in self.element_scores:
             if element_score.element_name == element_name:
                 element_score.score = score
                 if feedback:
                     element_score.feedback = feedback
+                if reasoning:
+                    element_score.reasoning = reasoning
                 element_score._validate_data()  # Re-validate after update
                 self._calculate_totals()
                 return

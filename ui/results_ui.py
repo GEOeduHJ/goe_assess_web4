@@ -7,7 +7,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta
 import statistics
@@ -94,10 +93,12 @@ class ResultsUI:
             )
         
         with col2:
+            avg_total_score = sum(r.total_score for r in results) / len(results)
+            avg_max_score = sum(r.total_max_score for r in results) / len(results)
             st.metric(
                 "평균 점수",
-                f"{avg_score:.1f}%",
-                help="전체 학생의 평균 점수 (백분율)"
+                f"{avg_total_score:.1f}/{avg_max_score:.1f}",
+                help="전체 학생의 평균 점수 (실제 점수)"
             )
         
         with col3:
@@ -334,10 +335,27 @@ class ResultsUI:
                         text=f"{element.element_name}: {element.score}/{element.max_score} ({percentage:.1f}%)"
                     )
             
-            # Feedback preview
-            if result.overall_feedback:
-                feedback_preview = result.overall_feedback[:100] + "..." if len(result.overall_feedback) > 100 else result.overall_feedback
-                st.markdown(f"**💬 피드백:** {feedback_preview}")
+            # Feedback in expandable box
+            if result.overall_feedback or result.element_scores:
+                with st.expander("💬 피드백 보기"):
+                    # Element-specific feedback
+                    if result.element_scores:
+                        for element in result.element_scores:
+                            element_reasoning = getattr(element, 'reasoning', '')
+                            element_feedback = getattr(element, 'feedback', '')
+                            
+                            if element_reasoning or element_feedback:
+                                st.markdown(f"**{element.element_name}**")
+                                if element_reasoning:
+                                    st.markdown(f"*판단 근거:* {element_reasoning}")
+                                if element_feedback:
+                                    st.markdown(f"*피드백:* {element_feedback}")
+                                st.markdown("---")
+                    
+                    # Overall feedback
+                    if result.overall_feedback:
+                        st.markdown("**전체 피드백**")
+                        st.markdown(result.overall_feedback)
             
             # Grading time and timestamp
             col1, col2 = st.columns(2)
@@ -348,16 +366,6 @@ class ResultsUI:
             with col2:
                 if result.graded_at:
                     st.caption(f"📅 {result.graded_at.strftime('%H:%M:%S')}")
-            
-            # Detail view button
-            if st.button(
-                "상세 보기",
-                key=f"detail_{result.student_name}_{result.student_class_number}",
-                use_container_width=True
-            ):
-                st.session_state.selected_student_result = result
-                st.session_state.results_view_mode = "individual"
-                st.rerun()
             
             st.markdown("</div>", unsafe_allow_html=True)
     
@@ -384,7 +392,7 @@ class ResultsUI:
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            st.metric("백분율 점수", f"{result.percentage:.1f}%")
+            st.metric("획득 점수", f"{result.total_score}/{result.total_max_score}")
         
         with col2:
             st.metric("채점 소요시간", f"{result.grading_time_seconds:.1f}초")
@@ -456,10 +464,12 @@ class ResultsUI:
             st.markdown(
                 f"""
                 <div style="
-                    background-color: #f8f9fa;
+                    background-color: #ffffff;
+                    color: #000000;
                     padding: 1rem;
                     border-radius: 0.5rem;
                     border-left: 4px solid #007bff;
+                    border: 1px solid #e0e0e0;
                 ">
                     {result.overall_feedback}
                 </div>
@@ -478,49 +488,24 @@ class ResultsUI:
         max_scores = [e.max_score for e in element_scores]
         percentages = [e.percentage for e in element_scores]
         
-        # Create subplot with bar chart and line chart
-        fig = make_subplots(
-            rows=1, cols=2,
-            subplot_titles=('점수 비교', '백분율 성과'),
-            specs=[[{"secondary_y": False}, {"secondary_y": False}]]
-        )
+        # Create bar chart for scores vs max scores
+        fig = go.Figure()
         
         # Bar chart for scores vs max scores
         fig.add_trace(
-            go.Bar(name='획득 점수', x=element_names, y=scores, marker_color='lightblue'),
-            row=1, col=1
+            go.Bar(name='획득 점수', x=element_names, y=scores, marker_color='lightblue')
         )
         fig.add_trace(
-            go.Bar(name='만점', x=element_names, y=max_scores, marker_color='lightgray', opacity=0.6),
-            row=1, col=1
+            go.Bar(name='만점', x=element_names, y=max_scores, marker_color='lightgray', opacity=0.6)
         )
-        
-        # Line chart for percentages
-        fig.add_trace(
-            go.Scatter(
-                name='백분율 (%)', 
-                x=element_names, 
-                y=percentages,
-                mode='lines+markers',
-                line=dict(color='red', width=3),
-                marker=dict(size=8)
-            ),
-            row=1, col=2
-        )
-        
-        # Add horizontal line at 80% (good performance threshold)
-        fig.add_hline(y=80, line_dash="dash", line_color="green", row=1, col=2)
         
         fig.update_layout(
             height=400,
             showlegend=True,
-            title_text="평가 요소별 성과 분석"
+            title_text="평가 요소별 성과 분석",
+            xaxis_title="평가 요소",
+            yaxis_title="점수"
         )
-        
-        fig.update_yaxes(title_text="점수", row=1, col=1)
-        fig.update_yaxes(title_text="백분율 (%)", row=1, col=2)
-        fig.update_xaxes(title_text="평가 요소", row=1, col=1)
-        fig.update_xaxes(title_text="평가 요소", row=1, col=2)
         
         st.plotly_chart(fig, use_container_width=True)
     

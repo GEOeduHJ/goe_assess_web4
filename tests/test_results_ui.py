@@ -37,9 +37,9 @@ class TestResultsUI:
             grading_time_seconds=8.5,
             overall_feedback="전반적으로 우수한 답안입니다. 지리적 개념을 정확히 이해하고 있습니다."
         )
-        result1.add_element_score("지리적 개념 이해", 18, 20, "지리적 개념을 정확히 설명했습니다.")
-        result1.add_element_score("사례 분석", 16, 20, "적절한 사례를 들어 설명했습니다.")
-        result1.add_element_score("논리적 구성", 17, 20, "논리적으로 잘 구성된 답안입니다.")
+        result1.add_element_score("지리적 개념 이해", 18, 20, "지리적 개념을 정확히 설명했습니다.", "개념의 정의와 특성을 올바르게 기술함")
+        result1.add_element_score("사례 분석", 16, 20, "적절한 사례를 들어 설명했습니다.", "관련 사례를 찾아 분석이 적절함")
+        result1.add_element_score("논리적 구성", 17, 20, "논리적으로 잘 구성된 답안입니다.", "체계적이고 논리적인 서술 구조")
         results.append(result1)
         
         # Student 2 - Average performer
@@ -49,9 +49,9 @@ class TestResultsUI:
             grading_time_seconds=7.2,
             overall_feedback="기본적인 이해는 있으나 더 구체적인 설명이 필요합니다."
         )
-        result2.add_element_score("지리적 개념 이해", 14, 20, "개념 이해가 부족합니다.")
-        result2.add_element_score("사례 분석", 12, 20, "사례가 부적절합니다.")
-        result2.add_element_score("논리적 구성", 15, 20, "구성이 다소 산만합니다.")
+        result2.add_element_score("지리적 개념 이해", 14, 20, "개념 이해가 부족합니다.", "기본 개념은 이해했으나 설명이 부족함")
+        result2.add_element_score("사례 분석", 12, 20, "사례가 부적절합니다.", "제시한 사례가 주제와 맞지 않음")
+        result2.add_element_score("논리적 구성", 15, 20, "구성이 다소 산만합니다.", "전체적인 흐름은 있으나 일부 산만함")
         results.append(result2)
         
         # Student 3 - Low performer
@@ -61,9 +61,9 @@ class TestResultsUI:
             grading_time_seconds=6.8,
             overall_feedback="기본 개념부터 다시 학습이 필요합니다."
         )
-        result3.add_element_score("지리적 개념 이해", 8, 20, "개념 이해가 매우 부족합니다.")
-        result3.add_element_score("사례 분석", 6, 20, "사례 분석이 잘못되었습니다.")
-        result3.add_element_score("논리적 구성", 9, 20, "논리적 구성이 부족합니다.")
+        result3.add_element_score("지리적 개념 이해", 8, 20, "개념 이해가 매우 부족합니다.", "기본 개념에 대한 이해 부족")
+        result3.add_element_score("사례 분석", 6, 20, "사례 분석이 잘못되었습니다.", "사례 선택과 분석이 부적절함")
+        result3.add_element_score("논리적 구성", 9, 20, "논리적 구성이 부족합니다.", "문단 구성과 논리적 연결성 부족")
         results.append(result3)
         
         return results

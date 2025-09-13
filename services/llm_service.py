@@ -759,7 +759,8 @@ class LLMService:
                     element_name=element_name,
                     score=int(score),
                     max_score=element.max_score,
-                    feedback=reasoning
+                    feedback="",  # 피드백은 별도로 설정
+                    reasoning=reasoning  # 판단 근거
                 )
             
             logger.info(f"Successfully graded student {student.name} in {elapsed_time:.2f}s")
@@ -784,7 +785,8 @@ class LLMService:
                     element_name=element.name,
                     score=0,
                     max_score=element.max_score,
-                    feedback="채점 오류로 인해 점수를 부여할 수 없습니다."
+                    feedback="채점 오류로 인해 점수를 부여할 수 없습니다.",
+                    reasoning="채점 처리 중 오류 발생"
                 )
             
             return result

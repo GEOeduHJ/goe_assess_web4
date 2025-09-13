@@ -442,10 +442,6 @@ class GradingExecutionUI:
         # Show error recovery options if there are errors
         if st.session_state.grading_errors:
             self.render_error_recovery_section()
-        
-        # Detailed progress toggle
-        if st.checkbox("상세 진행 상황 보기", key="show_detailed_progress"):
-            self.render_detailed_progress()
     
     def render_error_recovery_section(self):
         """Render error recovery options for failed operations."""
@@ -529,65 +525,6 @@ class GradingExecutionUI:
         
         st.info("⏭️ 오류를 무시하고 다음 학생부터 계속 진행합니다.")
     
-    def render_detailed_progress(self):
-        """Render detailed progress information."""
-        if not self.grading_engine:
-            return
-        
-        try:
-            summary = self.grading_engine.get_grading_summary()
-            
-            st.markdown("#### 📊 상세 진행 상황")
-            
-            # Summary statistics
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.markdown("**전체 통계:**")
-                st.write(f"- 배치 ID: {summary.get('batch_id', 'N/A')}")
-                st.write(f"- 성공률: {summary.get('success_rate', 0):.1f}%")
-                st.write(f"- 총 처리시간: {summary.get('total_processing_time', 0):.1f}초")
-            
-            with col2:
-                st.markdown("**시간 정보:**")
-                start_time = None
-                if summary.get('start_time'):
-                    start_time = datetime.fromisoformat(summary['start_time'])
-                    st.write(f"- 시작시간: {start_time.strftime('%H:%M:%S')}")
-                
-                elapsed_time = time.time() - start_time.timestamp() if start_time else 0
-                minutes, seconds = divmod(int(elapsed_time), 60)
-                st.write(f"- 경과시간: {minutes}분 {seconds}초")
-            
-            # Student details table
-            if summary.get('student_details'):
-                st.markdown("**학생별 상세 정보:**")
-                
-                # Create a more readable table
-                student_data = []
-                for detail in summary['student_details']:
-                    status_emoji = {
-                        'completed': '✅',
-                        'failed': '❌',
-                        'in_progress': '🔄',
-                        'not_started': '⏳',
-                        'cancelled': '⏹️'
-                    }.get(detail['status'], '❓')
-                    
-                    student_data.append({
-                        '상태': f"{status_emoji} {detail['status']}",
-                        '학생명': detail['student_name'],
-                        '시도횟수': detail['attempt_count'],
-                        '소요시간': f"{detail['processing_time']:.1f}초" if detail['processing_time'] > 0 else '-',
-                        '점수': f"{detail.get('total_score', 0)}/{detail.get('total_max_score', 0)}" if detail.get('total_score') is not None else '-',
-                        '오류': detail.get('error_message', '')[:50] + '...' if detail.get('error_message') and len(detail.get('error_message', '')) > 50 else detail.get('error_message', '')
-                    })
-                
-                st.dataframe(student_data, use_container_width=True)
-        
-        except Exception as e:
-            st.error(f"상세 정보를 불러오는 중 오류가 발생했습니다: {e}")
-    
     def render_realtime_results(self):
         """Render real-time grading results with option to view detailed results."""
         st.markdown("### 📋 실시간 채점 결과")
@@ -603,8 +540,9 @@ class GradingExecutionUI:
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
-            avg_score = sum(r.percentage for r in results) / len(results)
-            st.metric("평균 점수", f"{avg_score:.1f}%")
+            avg_score = sum(r.total_score for r in results) / len(results)
+            avg_max_score = sum(r.total_max_score for r in results) / len(results)
+            st.metric("평균 점수", f"{avg_score:.1f}/{avg_max_score:.1f}")
         
         with col2:
             avg_time = sum(r.grading_time_seconds for r in results) / len(results)
