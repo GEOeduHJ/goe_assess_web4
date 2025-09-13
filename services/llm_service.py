@@ -29,7 +29,7 @@ def patched_sync_httpx_client_wrapper_init(self, **kwargs):
 # Apply the patch
 groq._base_client.SyncHttpxClientWrapper.__init__ = patched_sync_httpx_client_wrapper_init
 
-from google import genai
+import google.generativeai as genai
 from groq import Groq
 
 from config import config
@@ -67,7 +67,6 @@ class LLMService:
     
     def __init__(self):
         """Initialize LLM service with API clients and performance optimization."""
-        self.gemini_client = None
         self.groq_client = None
         self._initialize_clients()
         
@@ -83,8 +82,8 @@ class LLMService:
         try:
             # Initialize Google Gemini
             if config.GOOGLE_API_KEY:
-                # Fix: Try initializing without http_options to avoid proxy issues
-                self.gemini_client = genai.Client(api_key=config.GOOGLE_API_KEY)
+                # Configure the API key for google-generativeai
+                genai.configure(api_key=config.GOOGLE_API_KEY)
                 logger.info("Google Gemini client initialized successfully")
             else:
                 logger.warning("Google API key not found")
@@ -106,9 +105,9 @@ class LLMService:
                 
         except Exception as e:
             logger.error(f"Failed to initialize LLM clients: {e}")
-            # Ensure clients are set to None on error
-            if self.gemini_client is None:
-                logger.info("Gemini client not initialized due to error")
+            # Log initialization status
+            if not config.GOOGLE_API_KEY:
+                logger.info("Gemini client not initialized due to missing API key")
             if self.groq_client is None:
                 logger.info("Groq client not initialized due to error")
     
@@ -128,19 +127,19 @@ class LLMService:
         """
         # For map grading, only Gemini supports image analysis
         if grading_type == GradingType.MAP:
-            if not self.gemini_client:
+            if not config.GOOGLE_API_KEY:
                 raise ValueError("Gemini API is required for map grading but not available")
             return LLMModelType.GEMINI
         
         # For descriptive grading, allow user choice
         if grading_type == GradingType.DESCRIPTIVE:
-            if model_type == LLMModelType.GEMINI and self.gemini_client:
+            if model_type == LLMModelType.GEMINI and config.GOOGLE_API_KEY:
                 return LLMModelType.GEMINI
             elif model_type == LLMModelType.GROQ and self.groq_client:
                 return LLMModelType.GROQ
             else:
                 # Fallback to available model
-                if self.gemini_client:
+                if config.GOOGLE_API_KEY:
                     return LLMModelType.GEMINI
                 elif self.groq_client:
                     return LLMModelType.GROQ
@@ -337,7 +336,7 @@ class LLMService:
         Raises:
             Exception: If API call fails after retries
         """
-        if not self.gemini_client:
+        if not config.GOOGLE_API_KEY:
             error_info = handle_error(
                 ValueError("Gemini client not initialized"),
                 ErrorType.AUTHENTICATION,
@@ -378,8 +377,11 @@ class LLMService:
                     
                     print(f"DEBUG: Using MIME type: {mime_type} for file extension: {file_ext}")
                     
-                    # Create image part using the new API
-                    image_part = genai.types.Part.from_bytes(data=image_data, mime_type=mime_type)
+                    # Create image part using google-generativeai
+                    image_part = {
+                        'mime_type': mime_type,
+                        'data': image_data
+                    }
                     
                     # According to official docs: put text and image in same contents array
                     content = [prompt, image_part]
@@ -405,7 +407,9 @@ class LLMService:
             
             # Generate response
             try:
-                response = self.gemini_client.models.generate_content(model='gemini-2.5-flash', contents=content)
+                # Use google-generativeai GenerativeModel
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                response = model.generate_content(content)
                 
                 if response.text:
                     result = {"text": response.text}
@@ -851,7 +855,7 @@ class LLMService:
             Dictionary with API availability status
         """
         return {
-            "gemini": self.gemini_client is not None,
+            "gemini": bool(config.GOOGLE_API_KEY),
             "groq": self.groq_client is not None
         }
     
