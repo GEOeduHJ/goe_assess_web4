@@ -9,8 +9,25 @@ wheels/
 # Virtual environments
 .venv
 
-
-# environment variables
-
+# Environment variables and secrets
 .env
+.streamlit/secrets.toml
+config.toml
+
+# Sample data
 sample_data
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
