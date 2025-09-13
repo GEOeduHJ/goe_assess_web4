@@ -114,6 +114,12 @@ class RubricUI:
         sample_rubric.add_element(content_element)
         sample_rubric.add_element(explanation_element)
         st.session_state.rubric = sample_rubric
+        
+        # Also set rubric in grading session
+        if 'grading_session' in st.session_state:
+            st.session_state.grading_session.rubric = sample_rubric
+        
+        st.success("✅ 샘플 루브릭이 로드되었습니다!")
     
     def render_evaluation_elements(self):
         """Render existing evaluation elements with edit/delete functionality."""
@@ -338,19 +344,24 @@ class RubricUI:
         with col2:
             if is_valid:
                 if st.button(
-                    "✅ 루브릭 완료 및 채점 시작",
+                    "✅ 루브릭 완료 및 채점 준비",
                     key="complete_rubric",
                     use_container_width=True,
                     type="primary"
                 ):
-                    # Save rubric to session state
+                    # Save rubric to session state and grading session
                     st.session_state.rubric_data = st.session_state.rubric.to_dict()
-                    st.success("✅ 루브릭이 저장되었습니다! 채점을 시작할 수 있습니다.")
+                    
+                    # Set rubric in grading session
+                    if 'grading_session' in st.session_state:
+                        st.session_state.grading_session.rubric = st.session_state.rubric
+                    
+                    st.success("✅ 루브릭이 저장되었습니다! 이제 채점 준비가 완료되었습니다.")
                     st.session_state.current_page = "grading"
                     st.rerun()
             else:
                 st.button(
-                    "✅ 루브릭 완료 및 채점 시작",
+                    "✅ 루브릭 완료 및 채점 준비",
                     key="complete_rubric_disabled",
                     use_container_width=True,
                     disabled=True,

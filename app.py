@@ -1,17 +1,16 @@
 """
 Main application entry point for the geography auto-grading platform.
-Includes performance monitoring and optimization features.
 """
 
 import streamlit as st
 from config import config
 from ui.main_ui import create_main_ui
 from ui.rubric_ui import create_rubric_ui
-from utils.performance_optimizer import start_performance_monitoring, performance_monitor
+# Performance monitoring imports removed as part of system monitoring cleanup
 
 
 def main():
-    """Main application function with performance optimization."""
+    """Main application function."""
     
     # Configure Streamlit page
     st.set_page_config(
@@ -21,9 +20,7 @@ def main():
         initial_sidebar_state="expanded"
     )
     
-    # Initialize performance monitoring if enabled
-    if config.ENABLE_PERFORMANCE_MONITORING and not performance_monitor.monitoring_active:
-        start_performance_monitoring()
+    # Performance monitoring initialization removed as part of system monitoring cleanup
     
     # Display main title
     st.title(config.APP_TITLE)
@@ -56,6 +53,25 @@ def main():
     if 'current_page' not in st.session_state:
         st.session_state.current_page = "main"
     
+    # Initialize other session state variables
+    if 'student_results' not in st.session_state:
+        st.session_state.student_results = []
+    
+    if 'grading_session' not in st.session_state:
+        from ui.grading_execution_ui import GradingSession
+        st.session_state.grading_session = GradingSession(
+            students=[], 
+            rubric=None,  # Will be set when user configures rubric
+            model_type="", 
+            grading_type=""
+        )
+    
+    if 'grading_progress' not in st.session_state:
+        st.session_state.grading_progress = None
+    
+    if 'grading_errors' not in st.session_state:
+        st.session_state.grading_errors = []
+    
     # Render appropriate page based on current state
     if st.session_state.current_page == "main":
         main_ui = create_main_ui()
@@ -66,10 +82,9 @@ def main():
         render_grading_page()
     elif st.session_state.current_page == "results":
         render_results_page()
-    elif st.session_state.current_page == "performance":
-        render_performance_page()
+    # Performance page routing removed as part of system monitoring cleanup
     
-    # Sidebar with additional information
+    # Sidebar with additional information (performance monitoring widget removed)
     render_sidebar()
 
 
@@ -112,15 +127,25 @@ def render_grading_page():
         st.error("❌ 학생 데이터가 처리되지 않았습니다. 메인 페이지로 돌아가서 파일을 다시 업로드해주세요.")
         return
     
-    if not st.session_state.get('rubric_data'):
+    # Check if rubric is available (either as object or data)
+    rubric = None
+    if st.session_state.get('rubric'):
+        rubric = st.session_state.rubric
+    elif st.session_state.get('rubric_data'):
+        rubric = Rubric.from_dict(st.session_state.rubric_data)
+    
+    if not rubric:
         st.error("❌ 루브릭이 설정되지 않았습니다. 루브릭 설정 페이지로 돌아가서 루브릭을 완성해주세요.")
         return
     
-    # Convert rubric data back to Rubric object
-    rubric = Rubric.from_dict(st.session_state.rubric_data)
+    # Ensure grading session has the rubric
+    if 'grading_session' in st.session_state:
+        st.session_state.grading_session.rubric = rubric
     
     # Get grading parameters
     students = st.session_state.processed_students
+    print(f"DEBUG: Students from session state: {len(students) if students else 0}")
+    
     model_type = st.session_state.get('selected_model', 'gemini')
     grading_type = st.session_state.get('grading_type', 'descriptive')
     references = st.session_state.get('rag_references')
@@ -163,38 +188,15 @@ def render_results_page():
     results_ui = create_results_ui()
     results_ui.render_results_page(results)
 
-
-def render_performance_page():
-    """Render the performance monitoring dashboard page."""
-    from ui.performance_dashboard_ui import create_performance_dashboard_ui
-    
-    # Navigation breadcrumb
-    col1, col2 = st.columns([1, 4])
-    
-    with col1:
-        if st.button("← 메인으로", key="back_to_main_from_perf"):
-            st.session_state.current_page = "main"
-            st.rerun()
-    
-    with col2:
-        st.markdown("**메인 > 성능 모니터링**")
-    
-    # Render performance dashboard
-    perf_ui = create_performance_dashboard_ui()
-    perf_ui.render_performance_dashboard()
+# Performance page rendering function removed as part of system monitoring cleanup
 
 
 def render_sidebar():
-    """Render sidebar with system information, navigation, and performance monitoring."""
+    """Render sidebar with system information and navigation."""
     with st.sidebar:
         st.markdown("## 📊 시스템 정보")
         
-        # Performance monitoring widget
-        if config.ENABLE_PERFORMANCE_MONITORING:
-            from ui.performance_dashboard_ui import create_performance_dashboard_ui
-            perf_ui = create_performance_dashboard_ui()
-            perf_ui.render_compact_performance_widget()
-            st.markdown("---")
+        # Performance monitoring widget removed as part of system monitoring cleanup
         
         # Current configuration
         with st.expander("🔧 현재 설정"):
@@ -202,7 +204,7 @@ def render_sidebar():
             st.write("**최대 파일 크기:**", f"{config.MAX_FILE_SIZE_MB}MB")
             st.write("**최대 재시도 횟수:**", config.MAX_RETRIES)
             st.write("**검색 결과 수:**", config.TOP_K_RETRIEVAL)
-            st.write("**메모리 임계값:**", f"{config.MAX_MEMORY_USAGE_MB}MB")
+            # Performance-related configuration removed as part of system monitoring cleanup
             st.write("**배치 처리 크기:**", config.BATCH_PROCESSING_SIZE)
         
         # API status
@@ -251,20 +253,14 @@ def render_sidebar():
             - BMP (.bmp)
             """)
         
-        # Performance dashboard link
-        if config.ENABLE_PERFORMANCE_MONITORING:
-            st.markdown("---")
-            if st.button("📊 성능 대시보드", use_container_width=True):
-                st.session_state.current_page = "performance"
-                st.rerun()
+        # Performance dashboard link removed as part of system monitoring cleanup
         
         # Version information
         st.markdown("---")
         st.markdown("### ℹ️ 버전 정보")
         st.caption("지리과 자동 채점 플랫폼 v1.0")
         st.caption("Powered by Streamlit & AI")
-        if config.ENABLE_PERFORMANCE_MONITORING:
-            st.caption("🚀 Performance Optimized")
+        # Performance optimization caption removed as part of system monitoring cleanup
 
 
 if __name__ == "__main__":

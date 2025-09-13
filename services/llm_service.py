@@ -9,13 +9,27 @@ Includes performance optimizations for memory usage, API call efficiency, and re
 import json
 import time
 import base64
-from typing import Dict, List, Optional, Union, Any
+from typing import Dict, List, Optional, Union, Any, Callable
 from pathlib import Path
 import logging
 from functools import lru_cache
 import hashlib
+import inspect
 
-import google.generativeai as genai
+# Workaround for proxy issue with httpx in Groq client
+import groq._base_client
+original_sync_httpx_client_wrapper_init = groq._base_client.SyncHttpxClientWrapper.__init__
+
+def patched_sync_httpx_client_wrapper_init(self, **kwargs):
+    # Remove 'proxies' argument if present
+    if 'proxies' in kwargs:
+        del kwargs['proxies']
+    return original_sync_httpx_client_wrapper_init(self, **kwargs)
+
+# Apply the patch
+groq._base_client.SyncHttpxClientWrapper.__init__ = patched_sync_httpx_client_wrapper_init
+
+from google import genai
 from groq import Groq
 
 from config import config
@@ -23,7 +37,7 @@ from models.student_model import Student
 from models.rubric_model import Rubric
 from models.result_model import GradingResult, ElementScore, GradingTimer
 from utils.error_handler import handle_error, retry_with_backoff, ErrorType, ErrorInfo
-from utils.performance_optimizer import optimize_performance, performance_monitor
+# Performance optimization imports removed as part of system monitoring cleanup
 
 
 # Configure logging
@@ -57,36 +71,46 @@ class LLMService:
         self.groq_client = None
         self._initialize_clients()
         
-        # Performance optimization
+        # Performance optimization (removed as part of system monitoring cleanup)
         self.response_cache = {}
         self.api_call_count = 0
         self.total_processing_time = 0.0
         self._cache_hits = 0
         self._cache_requests = 0
-        
-        # Register memory cleanup callback
-        performance_monitor.memory_optimizer.register_cleanup_callback(self._cleanup_cache)
     
     def _initialize_clients(self):
         """Initialize API clients with proper configuration."""
         try:
             # Initialize Google Gemini
             if config.GOOGLE_API_KEY:
-                genai.configure(api_key=config.GOOGLE_API_KEY)
-                self.gemini_client = genai.GenerativeModel('gemini-2.0-flash-exp')
+                # Fix: Try initializing without http_options to avoid proxy issues
+                self.gemini_client = genai.Client(api_key=config.GOOGLE_API_KEY)
                 logger.info("Google Gemini client initialized successfully")
             else:
                 logger.warning("Google API key not found")
             
             # Initialize Groq
             if config.GROQ_API_KEY:
-                self.groq_client = Groq(api_key=config.GROQ_API_KEY)
-                logger.info("Groq client initialized successfully")
+                try:
+                    # Fix: Initialize Groq client with explicit parameters to avoid proxy issues
+                    self.groq_client = Groq(
+                        api_key=config.GROQ_API_KEY,
+                        http_client=None  # Explicitly set to None to avoid proxy issues
+                    )
+                    logger.info("Groq client initialized successfully")
+                except Exception as groq_error:
+                    logger.error(f"Failed to initialize Groq client: {groq_error}")
+                    self.groq_client = None
             else:
                 logger.warning("Groq API key not found")
                 
         except Exception as e:
             logger.error(f"Failed to initialize LLM clients: {e}")
+            # Ensure clients are set to None on error
+            if self.gemini_client is None:
+                logger.info("Gemini client not initialized due to error")
+            if self.groq_client is None:
+                logger.info("Groq client not initialized due to error")
     
     def select_model(self, model_type: str, grading_type: str) -> str:
         """
@@ -125,12 +149,11 @@ class LLMService:
         
         raise ValueError(f"Invalid grading type: {grading_type}")
     
-    @lru_cache(maxsize=50)
     def generate_prompt(
         self, 
-        rubric_hash: str,
+        rubric: Rubric,
         student_answer: str = "", 
-        references_hash: Optional[str] = None,
+        references: Optional[List[str]] = None,
         grading_type: str = GradingType.DESCRIPTIVE
     ) -> str:
         """
@@ -157,7 +180,11 @@ class LLMService:
         if grading_type == GradingType.DESCRIPTIVE and references:
             prompt_parts.append("\n다음은 채점 참고 자료입니다:")
             for i, ref in enumerate(references, 1):
-                prompt_parts.append(f"참고자료 {i}: {ref}")
+                # Limit each reference chunk to 300 characters
+                clean_ref = ref.strip()
+                if len(clean_ref) > 300:
+                    clean_ref = clean_ref[:300] + "..."
+                prompt_parts.append(f"참고자료 {i}: {clean_ref}")
         
         # 3. Evaluation rubric
         prompt_parts.append("\n다음은 평가 루브릭입니다:")
@@ -194,8 +221,6 @@ class LLMService:
     def _cleanup_cache(self):
         """Clean up internal caches to free memory."""
         self.response_cache.clear()
-        # Clear LRU cache
-        self.generate_prompt.cache_clear()
         logger.info("LLM service cache cleaned up")
     
     def _generate_cache_key(self, prompt: str, image_path: Optional[str] = None) -> str:
@@ -219,7 +244,7 @@ class LLMService:
         if cache_key in self.response_cache:
             cached_data = self.response_cache[cache_key]
             # Check if cache is still valid (TTL)
-            if time.time() - cached_data['timestamp'] < config.API_CACHE_TTL_SECONDS:
+            if time.time() - cached_data['timestamp'] < getattr(config, 'API_CACHE_TTL_SECONDS', 300):
                 self._cache_hits += 1
                 return cached_data['response']
             else:
@@ -230,7 +255,7 @@ class LLMService:
     def _cache_response(self, cache_key: str, response: Dict[str, Any]):
         """Cache API response with TTL."""
         # Implement simple LRU eviction if cache is full
-        if len(self.response_cache) >= config.API_CACHE_MAX_SIZE:
+        if len(self.response_cache) >= getattr(config, 'API_CACHE_MAX_SIZE', 100):
             # Remove oldest entry
             oldest_key = min(self.response_cache.keys(), 
                            key=lambda k: self.response_cache[k]['timestamp'])
@@ -269,9 +294,9 @@ class LLMService:
         references_hash = self._create_references_hash(references)
         
         return self.generate_prompt(
-            rubric_hash=rubric_hash,
+            rubric=rubric,
             student_answer=student_answer,
-            references_hash=references_hash,
+            references=references,
             grading_type=grading_type
         )
     
@@ -292,12 +317,11 @@ class LLMService:
             logger.error(f"Failed to encode image {image_path}: {e}")
             raise
     
-    @optimize_performance
     def call_gemini_api(
         self, 
         prompt: str, 
         image_path: Optional[str] = None,
-        max_retries: int = None
+        max_retries: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Call Google Gemini API for text/image analysis with caching and optimization.
@@ -330,34 +354,58 @@ class LLMService:
             return cached_response
         
         def _make_api_call():
-            # Prepare content for API call
-            content = [prompt]
+            # Prepare content for API call following official documentation
+            # Reference: https://ai.google.dev/gemini-api/docs/vision
             
-            # Add image if provided
             if image_path and Path(image_path).exists():
+                print(f"DEBUG: Adding image to Gemini API request: {image_path}")
                 try:
                     # Read image file
                     with open(image_path, "rb") as image_file:
                         image_data = image_file.read()
                     
-                    # Create image part
-                    image_part = {
-                        "mime_type": "image/jpeg",  # Assume JPEG, could be enhanced
-                        "data": image_data
-                    }
-                    content.append(image_part)
+                    print(f"DEBUG: Successfully read image data: {len(image_data)} bytes")
+                    
+                    # Determine MIME type based on file extension
+                    file_ext = Path(image_path).suffix.lower()
+                    mime_type = {
+                        '.jpg': 'image/jpeg',
+                        '.jpeg': 'image/jpeg', 
+                        '.png': 'image/png',
+                        '.bmp': 'image/bmp',
+                        '.tiff': 'image/tiff'
+                    }.get(file_ext, 'image/jpeg')  # Default to jpeg
+                    
+                    print(f"DEBUG: Using MIME type: {mime_type} for file extension: {file_ext}")
+                    
+                    # Create image part using the new API
+                    image_part = genai.types.Part.from_bytes(data=image_data, mime_type=mime_type)
+                    
+                    # According to official docs: put text and image in same contents array
+                    content = [prompt, image_part]
+                    print(f"DEBUG: Created content with text and image")
+                    
                 except Exception as e:
+                    print(f"DEBUG: Failed to read image: {e}")
                     error_info = handle_error(
                         e,
                         ErrorType.FILE_PROCESSING,
                         context=f"call_gemini_api: failed to read image {image_path}",
                         user_context="이미지 파일 읽기"
                     )
-                    raise FileNotFoundError(error_info.user_message)
+                    raise ValueError(error_info.user_message)
+            else:
+                print(f"DEBUG: No image provided or image file not found")
+                print(f"DEBUG: image_path: {image_path}")
+                if image_path:
+                    print(f"DEBUG: Path exists: {Path(image_path).exists()}")
+                
+                # Text only content
+                content = [prompt]
             
             # Generate response
             try:
-                response = self.gemini_client.generate_content(content)
+                response = self.gemini_client.models.generate_content(model='gemini-2.5-flash', contents=content)
                 
                 if response.text:
                     result = {"text": response.text}
@@ -416,17 +464,18 @@ class LLMService:
             context="call_gemini_api"
         )
     
-    @optimize_performance
     def call_groq_api(
         self, 
-        prompt: str,
-        max_retries: int = None
+        prompt: str, 
+        model_name: str = "qwen/qwen3-32b",
+        max_retries: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Call Groq API for text analysis with caching and optimization.
         
         Args:
             prompt: Text prompt for the model
+            model_name: Name of the Groq model to use (default: qwen/qwen3-32b)
             max_retries: Maximum number of retry attempts
             
         Returns:
@@ -455,7 +504,7 @@ class LLMService:
             try:
                 # Call Groq API
                 response = self.groq_client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",  # Use Groq's latest model
+                    model=model_name,  # Use specified Groq model
                     messages=[
                         {"role": "user", "content": prompt}
                     ],
@@ -535,6 +584,10 @@ class LLMService:
             ValueError: If response format is invalid
         """
         try:
+            # Debug: Log the actual response content
+            print(f"DEBUG: API Response (length: {len(response_text)})")
+            print(f"DEBUG: API Response content: {repr(response_text)}")
+            
             # Extract JSON from response (handle cases where LLM adds extra text)
             json_start = response_text.find('{')
             json_end = response_text.rfind('}') + 1
@@ -627,7 +680,8 @@ class LLMService:
         rubric: Rubric,
         model_type: str,
         grading_type: str,
-        references: Optional[List[str]] = None
+        references: Optional[List[str]] = None,
+        groq_model_name: str = "qwen/qwen3-32b"
     ) -> GradingResult:
         """
         Grade a single student's answer sequentially.
@@ -638,6 +692,7 @@ class LLMService:
             model_type: LLM model to use
             grading_type: Type of grading (descriptive/map)
             references: Reference materials from RAG
+            groq_model_name: Specific Groq model to use (default: qwen/qwen3-32b)
             
         Returns:
             Grading result with timing information
@@ -659,12 +714,22 @@ class LLMService:
             
             # Call appropriate API
             if selected_model == LLMModelType.GEMINI:
+                image_path_to_use = student.image_path if grading_type == GradingType.MAP else None
+                print(f"DEBUG: Using Gemini API for student {student.name}")
+                print(f"DEBUG: Grading type: {grading_type}")
+                print(f"DEBUG: Student image_path: {student.image_path}")
+                print(f"DEBUG: Image path to use: {image_path_to_use}")
+                if image_path_to_use:
+                    print(f"DEBUG: Image file exists: {Path(image_path_to_use).exists()}")
+                    if Path(image_path_to_use).exists():
+                        print(f"DEBUG: Image file size: {Path(image_path_to_use).stat().st_size} bytes")
+                
                 response = self.call_gemini_api(
                     prompt=prompt,
-                    image_path=student.image_path if grading_type == GradingType.MAP else None
+                    image_path=image_path_to_use
                 )
             else:  # GROQ
-                response = self.call_groq_api(prompt=prompt)
+                response = self.call_groq_api(prompt=prompt, model_name=groq_model_name)
             
             # Parse response
             parsed_result = self.parse_response(response["text"], rubric)
@@ -727,7 +792,8 @@ class LLMService:
         model_type: str,
         grading_type: str,
         references: Optional[List[str]] = None,
-        progress_callback: Optional[callable] = None
+        groq_model_name: str = "qwen/qwen3-32b",
+        progress_callback: Optional[Callable] = None
     ) -> List[GradingResult]:
         """
         Grade multiple students sequentially with progress tracking.
@@ -738,6 +804,7 @@ class LLMService:
             model_type: LLM model to use
             grading_type: Type of grading
             references: Reference materials from RAG
+            groq_model_name: Specific Groq model to use (default: qwen/qwen3-32b)
             progress_callback: Optional callback for progress updates
             
         Returns:
@@ -756,7 +823,8 @@ class LLMService:
                     rubric=rubric,
                     model_type=model_type,
                     grading_type=grading_type,
-                    references=references
+                    references=references,
+                    groq_model_name=groq_model_name
                 )
                 
                 results.append(result)
@@ -788,65 +856,14 @@ class LLMService:
         }
     
     def get_performance_stats(self) -> Dict[str, Any]:
-        """
-        Get LLM service performance statistics.
-        
-        Returns:
-            Dictionary with performance metrics
-        """
-        return {
-            "api_call_count": self.api_call_count,
-            "total_processing_time": self.total_processing_time,
-            "avg_processing_time": self.total_processing_time / max(self.api_call_count, 1),
-            "cache_size": len(self.response_cache),
-            "cache_hit_rate": self._calculate_cache_hit_rate(),
-            "prompt_cache_info": self.generate_prompt.cache_info()._asdict()
-        }
-    
-    def _calculate_cache_hit_rate(self) -> float:
-        """Calculate cache hit rate percentage."""
-        if not hasattr(self, '_cache_hits'):
-            self._cache_hits = 0
-        if not hasattr(self, '_cache_misses'):
-            self._cache_misses = 0
-        
-        total_requests = self._cache_hits + self._cache_misses
-        if total_requests == 0:
-            return 0.0
-        
-        return (self._cache_hits / total_requests) * 100
-    
-    def optimize_memory_usage(self):
-        """Optimize memory usage by clearing caches and unused data."""
-        initial_cache_size = len(self.response_cache)
-        
-        # Clear old cache entries
-        current_time = time.time()
-        expired_keys = [
-            key for key, data in self.response_cache.items()
-            if current_time - data['timestamp'] > config.API_CACHE_TTL_SECONDS
-        ]
-        
-        for key in expired_keys:
-            del self.response_cache[key]
-        
-        # Clear prompt cache if it's getting large
-        cache_info = self.generate_prompt.cache_info()
-        if cache_info.currsize > 30:
-            self.generate_prompt.cache_clear()
-        
-        logger.info(f"LLM memory optimization: removed {len(expired_keys)} expired cache entries, "
-                   f"cleared prompt cache ({cache_info.currsize} entries)")
-        
-        return {
-            "expired_entries_removed": len(expired_keys),
-            "prompt_cache_cleared": cache_info.currsize > 30,
-            "cache_size_before": initial_cache_size,
-            "cache_size_after": len(self.response_cache)
-        }   
- def get_performance_stats(self) -> Dict[str, Any]:
         """Get LLM service performance statistics."""
-        cache_info = self.generate_prompt.cache_info()
+        # Since @lru_cache was removed, we can't get cache info
+        prompt_cache_info = {
+            "hits": 0,
+            "misses": 0,
+            "maxsize": 0,
+            "currsize": 0
+        }
         
         return {
             "api_call_count": self.api_call_count,
@@ -854,12 +871,7 @@ class LLMService:
             "avg_processing_time": self.total_processing_time / max(self.api_call_count, 1),
             "cache_size": len(self.response_cache),
             "cache_hit_rate": self._calculate_cache_hit_rate(),
-            "prompt_cache_info": {
-                "hits": cache_info.hits,
-                "misses": cache_info.misses,
-                "maxsize": cache_info.maxsize,
-                "currsize": cache_info.currsize
-            }
+            "prompt_cache_info": prompt_cache_info
         }
     
     def _calculate_cache_hit_rate(self) -> float:
@@ -871,4 +883,28 @@ class LLMService:
     
     def optimize_memory_usage(self) -> Dict[str, Any]:
         """Optimize memory usage by cleaning up caches and resources."""
-        cache_si
+        cache_size = len(self.response_cache)
+        
+        # Clear old cache entries
+        current_time = time.time()
+        expired_keys = [
+            key for key, data in self.response_cache.items()
+            if current_time - data['timestamp'] > getattr(config, 'API_CACHE_TTL_SECONDS', 300)
+        ]
+        
+        for key in expired_keys:
+            del self.response_cache[key]
+        
+        # Clear prompt cache if it's getting large
+        # Since @lru_cache was removed, there's no prompt cache to clear
+        pass
+        
+        logger.info(f"LLM memory optimization: removed {len(expired_keys)} expired cache entries, "
+                   f"cleared prompt cache (0 entries)")
+        
+        return {
+            "expired_entries_removed": len(expired_keys),
+            "prompt_cache_cleared": False,
+            "cache_size_before": cache_size,
+            "cache_size_after": len(self.response_cache)
+        }

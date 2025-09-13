@@ -13,4 +13,4 @@ wheels/
 # environment variables
 
 .env
-sample_data/
+sample_data

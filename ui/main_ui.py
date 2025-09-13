@@ -6,6 +6,9 @@ Handles grading type selection, model selection, and file uploads.
 import streamlit as st
 from typing import Optional, List, Dict, Any
 from enum import Enum
+import os
+import tempfile
+import shutil
 
 
 class GradingType(Enum):
@@ -49,6 +52,10 @@ class MainUI:
         
         if 'rag_references' not in st.session_state:
             st.session_state.rag_references = None
+        
+        # Store uploaded reference files without processing
+        if 'uploaded_reference_files' not in st.session_state:
+            st.session_state.uploaded_reference_files = None
     
     def render_main_page(self):
         """
@@ -67,7 +74,7 @@ class MainUI:
             
             # Model selection (for descriptive type)
             if st.session_state.grading_type == GradingType.DESCRIPTIVE.value:
-                self.render_model_selection()
+                self.render_model_selection_section()
             
             # File upload section
             self.render_file_upload_section()
@@ -121,9 +128,9 @@ class MainUI:
             st.session_state.rubric_data = None
             st.rerun()
     
-    def render_model_selection(self):
+    def render_model_selection_section(self):
         """
-        Render LLM model selection for descriptive grading.
+        Render LLM model selection section with detailed options.
         Implements Requirement 5.1
         """
         st.markdown("### 🤖 LLM 모델 선택")
@@ -155,6 +162,25 @@ class MainUI:
             
             # Display model description
             st.info(f"ℹ️ {model_options[selected_model]['description']}")
+            
+            # If Groq is selected, show model options
+            if selected_model == LLMModel.GROQ.value:
+                st.markdown("#### 🧠 Groq 모델 상세 선택")
+                groq_model_options = {
+                    "qwen/qwen3-32b": "Qwen3 32B - 고품질 한국어 처리",
+                    "openai/gpt-oss-120b": "GPT-OSS 120B - 대규모 언어 모델"
+                }
+                
+                selected_groq_model = st.selectbox(
+                    "Groq 모델 선택:",
+                    options=list(groq_model_options.keys()),
+                    format_func=lambda x: groq_model_options[x],
+                    key="groq_model_selection",
+                    help="Groq 플랫폼에서 사용할 구체적인 모델을 선택해주세요."
+                )
+                
+                st.session_state.selected_groq_model = selected_groq_model
+                st.info(f"선택된 Groq 모델: {groq_model_options[selected_groq_model]}")
     
     def render_file_upload_section(self):
         """
@@ -184,13 +210,14 @@ class MainUI:
         )
         
         if reference_files:
-            st.session_state.uploaded_files['reference_files'] = reference_files
+            # Store uploaded reference files without processing
+            st.session_state.uploaded_reference_files = reference_files
             st.success(f"✅ {len(reference_files)}개의 참고 자료가 업로드되었습니다.")
             
             # Display uploaded files
             with st.expander("📋 업로드된 참고 자료 목록"):
                 for i, file in enumerate(reference_files, 1):
-                    st.write(f"{i}. {file.name} ({file.size:,} bytes)")
+                    st.write(f"{i}. {file.name} ({file.size:,} bytes) - {file.type}")
         
         st.markdown("#### 📝 학생 답안 데이터")
         st.markdown("학생 이름, 반, 답안이 포함된 Excel 파일을 업로드해주세요.")
@@ -275,7 +302,7 @@ class MainUI:
             # Display uploaded images
             with st.expander("🖼️ 업로드된 이미지 파일 목록"):
                 for i, file in enumerate(image_files, 1):
-                    st.write(f"{i}. {file.name} ({file.size:,} bytes)")
+                    st.write(f"{i}. {file.name} ({file.size:,} bytes) - {file.type}")
     
     def render_navigation_buttons(self):
         """
@@ -287,7 +314,11 @@ class MainUI:
         # Check if required files are uploaded
         can_proceed = self.check_required_files()
         
-        col1, col2, col3 = st.columns([1, 2, 1])
+        col1, col2 = st.columns([1, 2])
+        
+        with col1:
+            # Performance dashboard button removed as part of system monitoring cleanup
+            pass
         
         with col2:
             if can_proceed:
@@ -362,8 +393,8 @@ class MainUI:
             else:
                 st.error("❌ 학생 답안 Excel 파일을 업로드해주세요")
             
-            if 'reference_files' in st.session_state.uploaded_files:
-                st.success(f"✅ 참고 자료 {len(st.session_state.uploaded_files['reference_files'])}개 업로드 완료")
+            if st.session_state.uploaded_reference_files:
+                st.success(f"✅ 참고 자료 {len(st.session_state.uploaded_reference_files)}개 업로드 완료")
             else:
                 st.info("ℹ️ 참고 자료는 선택사항입니다")
         
@@ -383,7 +414,6 @@ class MainUI:
         """Process uploaded files and prepare data for grading."""
         try:
             from services.file_service import FileService
-            from services.rag_service import RAGService
             from utils.error_handler import handle_error, ErrorType
             from ui.error_display_ui import display_file_upload_error, display_error
             
@@ -423,27 +453,11 @@ class MainUI:
                         if os.path.exists(tmp_file_path):
                             os.unlink(tmp_file_path)
                 
-                # Process reference files for RAG
+                # Store reference files without immediate RAG processing
                 reference_files = st.session_state.uploaded_files.get('reference_files')
                 if reference_files:
-                    try:
-                        rag_service = RAGService()
-                        result = rag_service.process_reference_documents(reference_files)
-                        
-                        if result['success']:
-                            st.session_state.rag_references = result
-                            st.success(f"✅ {result['chunks_created']}개의 참고 자료 청크를 생성했습니다.")
-                        else:
-                            st.error(f"❌ 참고 자료 처리 실패: {result['message']}")
-                    
-                    except Exception as e:
-                        error_info = handle_error(
-                            e,
-                            ErrorType.FILE_PROCESSING,
-                            context="process_uploaded_files: RAG processing failed",
-                            user_context="참고 자료 처리"
-                        )
-                        display_error(error_info)
+                    st.session_state.uploaded_reference_files = reference_files
+                    st.info(f"ℹ️ {len(reference_files)}개의 참고 자료가 저장되었습니다. 채점 시작 시 처리됩니다.")
             
             elif st.session_state.grading_type == GradingType.MAP.value:
                 # Process map grading files
@@ -478,22 +492,26 @@ class MainUI:
                         
                         if result['success']:
                             st.session_state.processed_students = result['students']
+                            # Store temp directories for cleanup after grading
+                            if 'temp_directories' not in st.session_state:
+                                st.session_state.temp_directories = []
+                            st.session_state.temp_directories.append(temp_dir)
                             st.success(f"✅ {len(result['students'])}명의 학생 데이터를 성공적으로 처리했습니다.")
                         else:
                             if 'error_info' in result:
                                 display_file_upload_error(result['error_info'], student_info_file.name)
                             else:
                                 st.error(f"❌ {result['message']}")
+                            # Clean up on failure
+                            import shutil
+                            if os.path.exists(temp_dir):
+                                shutil.rmtree(temp_dir)
                             return
                     
                     finally:
-                        # Clean up temporary files
+                        # Clean up Excel file only (keep image files for grading)
                         if os.path.exists(tmp_file_path):
                             os.unlink(tmp_file_path)
-                        
-                        import shutil
-                        if os.path.exists(temp_dir):
-                            shutil.rmtree(temp_dir)
             
         except Exception as e:
             error_info = handle_error(
@@ -503,6 +521,19 @@ class MainUI:
                 user_context="파일 처리"
             )
             display_error(error_info)
+
+    def cleanup_temp_directories(self):
+        """Clean up temporary directories after grading completion."""
+        if 'temp_directories' in st.session_state:
+            import shutil
+            for temp_dir in st.session_state.temp_directories:
+                if os.path.exists(temp_dir):
+                    try:
+                        shutil.rmtree(temp_dir)
+                        print(f"DEBUG: Cleaned up temp directory: {temp_dir}")
+                    except Exception as e:
+                        print(f"DEBUG: Failed to clean up temp directory {temp_dir}: {e}")
+            st.session_state.temp_directories = []
 
 
 def create_main_ui() -> MainUI:

@@ -410,3 +410,21 @@ def display_validation_error(error_info: ErrorInfo, data_context: str = "") -> N
         data_context: Context about the data being validated
     """
     error_display.display_validation_error(error_info, data_context)
+
+
+def display_progress_with_error_handling(
+    current: int, 
+    total: int, 
+    current_item: str = "",
+    recent_errors: List[ErrorInfo] = None
+) -> None:
+    """
+    Convenience function for displaying progress with error handling.
+    
+    Args:
+        current: Current progress count
+        total: Total items to process
+        current_item: Currently processing item name
+        recent_errors: List of recent errors during processing
+    """
+    error_display.display_progress_with_error_handling(current, total, current_item, recent_errors)

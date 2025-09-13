@@ -39,8 +39,10 @@ class Student:
         if not self.answer.strip() and not self.image_path:
             raise ValueError("Student must have either text answer or image path")
         
-        if self.image_path and not Path(self.image_path).exists():
-            raise ValueError(f"Image file does not exist: {self.image_path}")
+        # Skip image path existence validation during processing
+        # The file service will handle image file validation separately
+        # if self.image_path and not Path(self.image_path).exists():
+        #     raise ValueError(f"Image file does not exist: {self.image_path}")
     
     @property
     def has_text_answer(self) -> bool:

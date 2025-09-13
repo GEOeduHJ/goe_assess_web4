@@ -7,7 +7,7 @@ import streamlit as st
 import time
 from typing import List, Dict, Optional, Callable
 from datetime import datetime, timedelta
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import threading
 import queue
 
@@ -16,9 +16,10 @@ from models.rubric_model import Rubric
 from models.result_model import GradingResult
 from services.grading_engine import SequentialGradingEngine, GradingProgress, StudentGradingStatus, GradingStatus
 from services.llm_service import LLMService
+from services.rag_service import RAGService, format_retrieved_content
 from utils.error_handler import handle_error, ErrorType, ErrorInfo
 from ui.error_display_ui import display_error, display_api_error, display_progress_with_error_handling
-from utils.performance_optimizer import optimize_performance, performance_monitor
+# Performance optimization imports removed as part of system monitoring cleanup
 from config import config
 
 
@@ -33,7 +34,9 @@ class GradingSession:
     start_time: Optional[datetime] = None
     is_active: bool = False
     is_paused: bool = False
-    results: List[GradingResult] = None
+    results: List[GradingResult] = field(default_factory=list)
+    # Store uploaded reference files for on-demand processing
+    uploaded_files: Optional[List] = None
     
     def __post_init__(self):
         if self.results is None:
@@ -47,8 +50,15 @@ class GradingExecutionUI:
         """Initialize the grading execution UI with performance optimization."""
         self.initialize_session_state()
         self.grading_engine = None
-        self.progress_queue = queue.Queue()
-        self.result_queue = queue.Queue()
+        
+        # Use session state to maintain queue instances across UI refreshes
+        if 'progress_queue' not in st.session_state:
+            st.session_state.progress_queue = queue.Queue()
+        if 'result_queue' not in st.session_state:
+            st.session_state.result_queue = queue.Queue()
+            
+        self.progress_queue = st.session_state.progress_queue
+        self.result_queue = st.session_state.result_queue
         
         # Performance optimization
         self.ui_update_interval = 1.0  # seconds
@@ -57,26 +67,19 @@ class GradingExecutionUI:
     
     def initialize_session_state(self):
         """Initialize Streamlit session state for grading execution."""
-        if 'grading_session' not in st.session_state:
-            st.session_state.grading_session = None
+        session_vars = {
+            'grading_session': None,
+            'grading_progress': None,
+            'student_results': [],  # Initialize as empty list
+            'grading_thread': None,
+            'show_detailed_progress': False,
+            'grading_errors': [],
+            'error_recovery_options': {}
+        }
         
-        if 'grading_progress' not in st.session_state:
-            st.session_state.grading_progress = None
-        
-        if 'student_results' not in st.session_state:
-            st.session_state.student_results = []
-        
-        if 'grading_thread' not in st.session_state:
-            st.session_state.grading_thread = None
-        
-        if 'show_detailed_progress' not in st.session_state:
-            st.session_state.show_detailed_progress = False
-        
-        if 'grading_errors' not in st.session_state:
-            st.session_state.grading_errors = []
-        
-        if 'error_recovery_options' not in st.session_state:
-            st.session_state.error_recovery_options = {}
+        for var_name, default_value in session_vars.items():
+            if var_name not in st.session_state:
+                st.session_state[var_name] = default_value
     
     def render_grading_execution_page(
         self,
@@ -99,15 +102,27 @@ class GradingExecutionUI:
         st.markdown("## 🚀 채점 실행")
         st.markdown("---")
         
-        # Initialize grading session if not exists
-        if not st.session_state.grading_session:
+        # Initialize or update grading session
+        if not st.session_state.grading_session or not st.session_state.grading_session.students:
             st.session_state.grading_session = GradingSession(
                 students=students,
                 rubric=rubric,
                 model_type=model_type,
                 grading_type=grading_type,
-                references=references
+                references=references,
+                uploaded_files=st.session_state.get('uploaded_reference_files', None)  # Pass uploaded files
             )
+            print(f"DEBUG: Created new grading session with {len(students) if students else 0} students")
+        else:
+            # Update existing session with new data
+            st.session_state.grading_session.students = students
+            st.session_state.grading_session.rubric = rubric
+            st.session_state.grading_session.model_type = model_type
+            st.session_state.grading_type = grading_type
+            st.session_state.grading_session.references = references
+            if st.session_state.get('uploaded_reference_files'):
+                st.session_state.grading_session.uploaded_files = st.session_state.uploaded_reference_files
+            print(f"DEBUG: Updated grading session with {len(students) if students else 0} students")
         
         # Render grading overview
         self.render_grading_overview()
@@ -119,18 +134,55 @@ class GradingExecutionUI:
         if st.session_state.grading_session.is_active or st.session_state.grading_progress:
             self.render_progress_display()
         
+        # Check for completion first
+        if st.session_state.get('grading_completed', False):
+            st.success("✅ 채점이 완료되었습니다!")
+            
+            # Clean up temporary directories
+            self._cleanup_temp_directories()
+            
+            if st.session_state.student_results:
+                self.render_realtime_results()
         # Render real-time results
-        if st.session_state.student_results:
+        elif st.session_state.student_results:
             self.render_realtime_results()
+        elif not st.session_state.grading_session.is_active and not st.session_state.student_results:
+            st.info("채점을 시작하려면 위의 '채점 시작' 버튼을 클릭하세요.")
         
         # Update progress from background thread
+        print(f"DEBUG: Calling update_progress_from_queue")
         self.update_progress_from_queue()
+        
+        # Auto-refresh only if grading is active and no completion detected
+        if (st.session_state.grading_session and 
+            st.session_state.grading_session.is_active and 
+            not st.session_state.get('grading_completed', False)):
+            print(f"DEBUG: Grading active, scheduling auto-refresh")
+            import time
+            time.sleep(0.5)  # Shorter delay
+            st.rerun()
     
     def render_grading_overview(self):
         """Render grading session overview."""
         session = st.session_state.grading_session
         
         st.markdown("### 📊 채점 개요")
+        
+        # Check if basic setup is complete
+        if not session.rubric:
+            st.warning("⚠️ 루브릭이 설정되지 않았습니다. 먼저 루브릭을 설정해주세요.")
+            if st.button("📋 루브릭 설정하러 가기", type="primary"):
+                st.session_state.current_page = "rubric"
+                st.rerun()
+            return
+        
+        if not session.students:
+            st.warning("⚠️ 학생 데이터가 없습니다. 먼저 학생 답안을 업로드해주세요.")
+            if st.button("🏠 메인 페이지로 돌아가기", type="primary"):
+                st.session_state.current_page = "main"
+                st.rerun()
+            st.info("💡 메인 페이지에서 Excel 파일을 업로드하여 학생 답안을 추가할 수 있습니다.")
+            return
         
         col1, col2, col3, col4 = st.columns(4)
         
@@ -146,7 +198,8 @@ class GradingExecutionUI:
             st.metric("AI 모델", model_name)
         
         with col4:
-            st.metric("평가 요소", len(session.rubric.elements))
+            rubric_elements_count = len(session.rubric.elements) if session.rubric else 0
+            st.metric("평가 요소", rubric_elements_count)
         
         # Show detailed information in expander
         with st.expander("📋 상세 정보"):
@@ -162,15 +215,21 @@ class GradingExecutionUI:
             
             with col2:
                 st.markdown("**평가 루브릭:**")
-                st.write(f"**루브릭명:** {session.rubric.name}")
-                st.write(f"**총 만점:** {session.rubric.total_max_score}점")
-                
-                for element in session.rubric.elements:
-                    st.write(f"- {element.name}: {element.max_score}점")
+                if session.rubric:
+                    st.write(f"**루브릭명:** {session.rubric.name}")
+                    st.write(f"**총 만점:** {session.rubric.total_max_score}점")
+                    
+                    for element in session.rubric.elements:
+                        st.write(f"- {element.name}: {element.max_score}점")
+                else:
+                    st.write("⚠️ 루브릭이 설정되지 않았습니다.")
                 
                 if session.references:
                     st.markdown("**참고 자료:**")
                     st.write(f"✅ {len(session.references)}개 문서 활용")
+                elif session.uploaded_files:
+                    st.markdown("**참고 자료:**")
+                    st.write(f"✅ {len(session.uploaded_files)}개 문서 업로드됨 (채점 시 처리)")
     
     def render_grading_controls(self):
         """Render grading control buttons."""
@@ -178,11 +237,64 @@ class GradingExecutionUI:
         
         st.markdown("### 🎮 채점 제어")
         
+        # Check for completion - multiple detection methods
+        grading_completed = False
+        
+        # Method 1: Direct completion flag from queue processing
+        if st.session_state.get('grading_completed', False):
+            grading_completed = True
+            print("DEBUG: Grading completed detected via completion flag")
+        
+        # Method 2: Progress-based completion detection
+        elif (session and not session.is_active and 
+              st.session_state.grading_progress and
+              st.session_state.grading_progress.total_students > 0 and
+              (st.session_state.grading_progress.completed_students + 
+               st.session_state.grading_progress.failed_students) >= 
+               st.session_state.grading_progress.total_students):
+            grading_completed = True
+            print("DEBUG: Grading completed detected via progress metrics")
+        
+        # Method 3: Results-based completion detection
+        elif (session and not session.is_active and 
+              st.session_state.student_results and 
+              len(st.session_state.student_results) >= len(session.students)):
+            grading_completed = True
+            print("DEBUG: Grading completed detected via result count")
+        
+        # Debug current state
+        print(f"DEBUG: Session active: {session.is_active if session else 'No session'}")
+        print(f"DEBUG: Grading completed flag: {st.session_state.get('grading_completed', False)}")
+        print(f"DEBUG: Student results count: {len(st.session_state.get('student_results', []))}")
+        print(f"DEBUG: Total students: {len(session.students) if session else 0}")
+        
+        if grading_completed:
+            print("DEBUG: Showing completion UI")
+            st.success("✅ 채점이 완료되었습니다!")
+            
+            # Clean up temporary directories
+            self._cleanup_temp_directories()
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("📊 결과 보기", type="primary", use_container_width=True, key="view_results_btn"):
+                    st.session_state.current_page = "results"
+                    st.rerun()
+            with col2:
+                if st.button("🔄 새 채점 시작", use_container_width=True, key="new_grading_btn"):
+                    # Reset completion flags for new grading
+                    st.session_state.grading_completed = False
+                    st.session_state.student_results = []
+                    st.session_state.grading_progress = None
+                    st.rerun()
+            return
+        
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             # Start grading button
-            if not session.is_active:
+            session_active = session and session.is_active
+            if not session_active:
                 if st.button(
                     "🚀 채점 시작",
                     key="start_grading",
@@ -190,6 +302,9 @@ class GradingExecutionUI:
                     use_container_width=True,
                     help="모든 학생에 대한 순차 채점을 시작합니다"
                 ):
+                    # Immediately mark as active to prevent double-click
+                    if session:
+                        session.is_active = True
                     self.start_grading()
             else:
                 st.button(
@@ -201,7 +316,7 @@ class GradingExecutionUI:
         
         with col2:
             # Pause/Resume button
-            if session.is_active:
+            if session and session.is_active:
                 if not session.is_paused:
                     if st.button(
                         "⏸️ 일시정지",
@@ -221,7 +336,7 @@ class GradingExecutionUI:
         
         with col3:
             # Stop grading button
-            if session.is_active:
+            if session and session.is_active:
                 if st.button(
                     "⏹️ 채점 중단",
                     key="stop_grading",
@@ -232,7 +347,7 @@ class GradingExecutionUI:
         
         with col4:
             # Retry failed button (only show if there are failed students)
-            if (not session.is_active and 
+            if (session and not session.is_active and 
                 st.session_state.grading_progress and 
                 st.session_state.grading_progress.failed_students > 0):
                 if st.button(
@@ -243,8 +358,8 @@ class GradingExecutionUI:
                 ):
                     self.retry_failed_students()
         
-        # Show current status
-        if session.is_active:
+        # Show current status (only if not completed)
+        if session and session.is_active:
             if session.is_paused:
                 st.warning("⏸️ 채점이 일시정지되었습니다. 재시작 버튼을 눌러 계속 진행하세요.")
             else:
@@ -253,8 +368,12 @@ class GradingExecutionUI:
     def render_progress_display(self):
         """Render real-time progress display with error handling."""
         progress = st.session_state.grading_progress
+        session = st.session_state.grading_session
+        
         if not progress:
             return
+        
+        # Don't show duplicate completion message - it's handled in render_grading_controls
         
         st.markdown("### 📈 진행 상황")
         
@@ -296,9 +415,21 @@ class GradingExecutionUI:
         
         # Enhanced progress display with error handling
         current_student_name = ""
-        if progress.current_student_index < len(st.session_state.grading_session.students):
-            current_student = st.session_state.grading_session.students[progress.current_student_index]
+        # Use current_student_name from progress if available
+        if hasattr(progress, 'current_student_name') and progress.current_student_name:
+            current_student_name = progress.current_student_name
+            if hasattr(progress, 'current_student_class') and progress.current_student_class:
+                current_student_name = f"{progress.current_student_name} ({progress.current_student_class})"
+            print(f"DEBUG: Displaying current student: {current_student_name}")
+        elif (session and session.students and 
+              hasattr(progress, 'current_student_index') and
+              0 <= progress.current_student_index < len(session.students)):
+            # Fallback to session student list
+            current_student = session.students[progress.current_student_index]
             current_student_name = f"{current_student.name} ({current_student.class_number})"
+            print(f"DEBUG: Fallback current student: {current_student_name}")
+        else:
+            print(f"DEBUG: No current student info available. Progress attributes: {[attr for attr in dir(progress) if not attr.startswith('_')]}")
         
         # Use error-aware progress display
         display_progress_with_error_handling(
@@ -379,6 +510,10 @@ class GradingExecutionUI:
         # Update session model
         session.model_type = new_model
         
+        # If switching to Groq, set default Groq model if not already set
+        if new_model == "groq" and not hasattr(st.session_state, 'selected_groq_model'):
+            st.session_state.selected_groq_model = "qwen/qwen3-32b"
+        
         # Retry failed students
         self.retry_failed_students()
     
@@ -415,11 +550,12 @@ class GradingExecutionUI:
             
             with col2:
                 st.markdown("**시간 정보:**")
+                start_time = None
                 if summary.get('start_time'):
                     start_time = datetime.fromisoformat(summary['start_time'])
                     st.write(f"- 시작시간: {start_time.strftime('%H:%M:%S')}")
                 
-                elapsed_time = time.time() - start_time.timestamp() if summary.get('start_time') else 0
+                elapsed_time = time.time() - start_time.timestamp() if start_time else 0
                 minutes, seconds = divmod(int(elapsed_time), 60)
                 st.write(f"- 경과시간: {minutes}분 {seconds}초")
             
@@ -457,6 +593,7 @@ class GradingExecutionUI:
         st.markdown("### 📋 실시간 채점 결과")
         
         results = st.session_state.student_results
+        print(f"DEBUG: Rendering results, count: {len(results) if results else 0}")
         
         if not results:
             st.info("아직 완료된 채점 결과가 없습니다.")
@@ -518,7 +655,10 @@ class GradingExecutionUI:
         with col2:
             st.markdown("**채점 정보:**")
             st.write(f"⏱️ 소요시간: {result.grading_time_seconds:.1f}초")
-            st.write(f"📅 채점시각: {result.graded_at.strftime('%H:%M:%S')}")
+            if result.graded_at:
+                st.write(f"📅 채점시각: {result.graded_at.strftime('%H:%M:%S')}")
+            else:
+                st.write("📅 채점시각: N/A")
             st.write(f"🏆 등급: {result.grade_letter}")
         
         if result.overall_feedback:
@@ -537,6 +677,7 @@ class GradingExecutionUI:
             # Set up callbacks
             self.grading_engine.set_progress_callback(self.on_progress_update)
             self.grading_engine.set_student_completed_callback(self.on_student_completed)
+            self.grading_engine.set_grading_completed_callback(self.on_grading_completed)
             self.grading_engine.set_error_callback(self.on_error)
             
             # Validate setup
@@ -562,9 +703,12 @@ class GradingExecutionUI:
                 for warning in validation['warnings']:
                     st.warning(f"- {warning}")
             
-            # Clear previous errors and results
+            # Clear previous errors but preserve results if this is a retry
             st.session_state.grading_errors = []
-            st.session_state.student_results = []
+            # Only clear results if starting fresh (not retrying)
+            if not st.session_state.get('student_results'):
+                st.session_state.student_results = []
+            # Reset progress for new grading session
             st.session_state.grading_progress = None
             
             # Start grading in background thread
@@ -596,21 +740,29 @@ class GradingExecutionUI:
     def run_grading_thread(self, session: GradingSession):
         """Run grading in background thread with comprehensive error handling."""
         try:
-            results = self.grading_engine.grade_students_sequential(
-                students=session.students,
-                rubric=session.rubric,
-                model_type=session.model_type,
-                grading_type=session.grading_type,
-                references=session.references
-            )
+            # Get the selected Groq model from session state
+            groq_model_name = getattr(st.session_state, 'selected_groq_model', 'qwen/qwen3-32b')
             
-            # Mark session as completed
-            session.is_active = False
-            session.is_paused = False
-            
-            # Send completion notification
-            self.progress_queue.put(('completed', len(results)))
-            
+            if self.grading_engine:
+                results = self.grading_engine.grade_students_sequential(
+                    students=session.students,
+                    rubric=session.rubric,
+                    model_type=session.model_type,
+                    grading_type=session.grading_type,
+                    references=session.references,
+                    groq_model_name=groq_model_name,
+                    uploaded_files=session.uploaded_files  # Pass uploaded files for on-demand RAG processing
+                )
+                
+                # Mark session as completed - completion callback will handle UI updates
+                session.is_active = False
+                session.is_paused = False
+                
+                # Note: Completion notification is now handled by grading_completed_callback
+                # instead of manually sending to progress_queue here
+            else:
+                st.error("채점 엔진이 초기화되지 않았습니다.")
+                
         except Exception as e:
             # Handle thread errors with proper error categorization
             error_info = handle_error(
@@ -667,11 +819,16 @@ class GradingExecutionUI:
         session = st.session_state.grading_session
         
         try:
+            # Get the selected Groq model from session state
+            groq_model_name = getattr(st.session_state, 'selected_groq_model', 'qwen/qwen3-32b')
+            
             new_results = self.grading_engine.retry_failed_students(
                 rubric=session.rubric,
                 model_type=session.model_type,
                 grading_type=session.grading_type,
-                references=session.references
+                references=session.references,
+                groq_model_name=groq_model_name,
+                uploaded_files=session.uploaded_files  # Pass uploaded files for on-demand RAG processing
             )
             
             # Add new results to session
@@ -685,14 +842,39 @@ class GradingExecutionUI:
     
     def on_progress_update(self, progress: GradingProgress):
         """Callback for progress updates."""
-        st.session_state.grading_progress = progress
-        self.progress_queue.put(('progress', progress))
+        try:
+            # Use queue to safely communicate between threads
+            self.progress_queue.put(('progress', progress))
+        except Exception as e:
+            print(f"Error in progress update: {e}")
     
     def on_student_completed(self, student_status: StudentGradingStatus):
         """Callback for individual student completion."""
-        if student_status.result:
-            st.session_state.student_results.append(student_status.result)
-            self.result_queue.put(('result', student_status.result))
+        try:
+            if student_status.result:
+                # Use queue to safely pass results between threads
+                self.result_queue.put(('result', student_status.result))
+                print(f"DEBUG: Queued result for {student_status.result.student_name}")
+            else:
+                print(f"DEBUG: No result for student {student_status.student.name}")
+        except Exception as e:
+            error_msg = f"Error updating student results: {str(e)}"
+            print(error_msg)  # Fallback logging
+    
+    def on_grading_completed(self, completed_count: int):
+        """Callback for overall grading completion."""
+        try:
+            print(f"DEBUG: on_grading_completed called with {completed_count} students")
+            # Send completion signal to progress queue
+            self.progress_queue.put(('completed', completed_count))
+            print(f"DEBUG: Completion signal put in queue")
+            
+            # Note: Do NOT set session state from background thread
+            # It will be handled in the main thread via queue processing
+                
+        except Exception as e:
+            error_msg = f"Error handling grading completion: {str(e)}"
+            print(error_msg)  # Fallback logging
     
     def on_error(self, message: str, exception: Exception):
         """Callback for error handling with proper error categorization."""
@@ -725,39 +907,101 @@ class GradingExecutionUI:
     
     def update_progress_from_queue(self):
         """Update UI from background thread queues with error handling."""
+        print(f"DEBUG: update_progress_from_queue called")
         # Process progress updates
+        should_rerun = False
+        queue_processed = False
+        processed_items = 0
         try:
             while True:
                 update_type, data = self.progress_queue.get_nowait()
+                queue_processed = True
+                processed_items += 1
+                print(f"DEBUG: Processing queue item #{processed_items}: {update_type}")
                 
                 if update_type == 'progress':
+                    # Safely update session state in main thread
                     st.session_state.grading_progress = data
+                    should_rerun = True
                 
                 elif update_type == 'error':
                     if isinstance(data, ErrorInfo):
                         display_error(data)
                     else:
                         st.error(f"채점 오류: {data}")
+                    should_rerun = True
+                
+                elif update_type == 'completed':
+                    # Handle grading completion - show results immediately
+                    print(f"DEBUG: Processing completed signal with {data} students")
+                    if hasattr(st.session_state, 'grading_session') and st.session_state.grading_session:
+                        st.session_state.grading_session.is_active = False
+                        st.session_state.grading_session.is_paused = False
+                    
+                    # Set completion flag for UI to detect
+                    st.session_state.grading_completed = True
+                    st.session_state.completed_count = data
+                    print(f"DEBUG: Set grading_completed flag to True in main thread")
+                    
+                    st.success(f"🎉 채점이 완료되었습니다! 총 {data}명의 학생이 채점되었습니다.")
+                    st.info("📊 아래에서 실시간 채점 결과를 확인하거나, 상단 탭에서 '결과 보기'를 클릭하세요.")
+                    should_rerun = True
                 
                 elif update_type == 'thread_error':
                     display_error(data)
-                    st.error("🚨 채점 프로세스가 중단되었습니다. 설정을 확인하고 다시 시도해주세요.")
-                
-                elif update_type == 'completed':
-                    st.success(f"🎉 채점이 완료되었습니다! 총 {data}명의 학생이 채점되었습니다.")
+                    should_rerun = True
+                    if hasattr(st.session_state, 'grading_session') and st.session_state.grading_session:
+                        st.session_state.grading_session.is_active = False
                     
         except queue.Empty:
+            if queue_processed:
+                print(f"DEBUG: Queue processed {processed_items} items, now empty")
+            else:
+                print(f"DEBUG: Queue was empty")
             pass
         
-        # Process result updates
+        # Process result updates first
         try:
             while True:
                 update_type, data = self.result_queue.get_nowait()
                 if update_type == 'result':
-                    # Result already added in callback
-                    pass
+                    # Safely update session state in main thread
+                    if 'student_results' not in st.session_state:
+                        st.session_state.student_results = []
+                    st.session_state.student_results.append(data)
+                    print(f"DEBUG: Added result for {data.student_name}, total results: {len(st.session_state.student_results)}")
+                    should_rerun = True
         except queue.Empty:
             pass
+        
+        # Check if all results are collected (completion detection via results)
+        session = st.session_state.grading_session
+        if (session and not session.is_active and 
+            st.session_state.student_results and 
+            len(st.session_state.student_results) >= len(session.students)):
+            if not st.session_state.get('grading_completed', False):
+                print(f"DEBUG: Auto-detected completion via result count")
+                st.session_state.grading_completed = True
+                st.session_state.completed_count = len(st.session_state.student_results)
+                should_rerun = True
+        
+        # Only rerun once if any updates occurred
+        if should_rerun:
+            st.rerun()
+
+    def _cleanup_temp_directories(self):
+        """Clean up temporary directories after grading completion."""
+        if 'temp_directories' in st.session_state:
+            import shutil
+            import os
+            for temp_dir in st.session_state.temp_directories:
+                if os.path.exists(temp_dir):
+                    try:
+                        shutil.rmtree(temp_dir)
+                        print(f"DEBUG: Cleaned up temp directory: {temp_dir}")
+                    except Exception as e:
+                        print(f"DEBUG: Failed to clean up temp directory {temp_dir}: {e}")
+            st.session_state.temp_directories = []
 
 
 def create_grading_execution_ui() -> GradingExecutionUI:

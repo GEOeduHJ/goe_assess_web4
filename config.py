@@ -1,8 +1,3 @@
-"""
-Configuration management module for the geography auto-grading platform.
-Handles environment variables and application settings.
-"""
-
 import os
 from typing import Optional
 from dotenv import load_dotenv
@@ -17,6 +12,7 @@ class Config:
     # API Keys
     GOOGLE_API_KEY: Optional[str] = os.getenv("GOOGLE_API_KEY")
     GROQ_API_KEY: Optional[str] = os.getenv("GROQ_API_KEY")
+    HF_TOKEN: Optional[str] = os.getenv("HF_TOKEN")
     
     # Application Settings
     APP_TITLE: str = os.getenv("APP_TITLE", "지리과 자동 채점 플랫폼")
@@ -31,13 +27,18 @@ class Config:
     CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", "50"))
     TOP_K_RETRIEVAL: int = int(os.getenv("TOP_K_RETRIEVAL", "3"))
     
+    # RAG Optimization Settings
+    MAX_DOCS_PER_STUDENT: int = int(os.getenv("MAX_DOCS_PER_STUDENT", "5"))
+    CHUNKS_PER_DOC_LIMIT: int = int(os.getenv("CHUNKS_PER_DOC_LIMIT", "20"))
+    RAG_PROCESSING_TIMEOUT: int = int(os.getenv("RAG_PROCESSING_TIMEOUT", "60"))
+    EMBEDDING_BATCH_SIZE: int = int(os.getenv("EMBEDDING_BATCH_SIZE", "8"))
+    ENABLE_INCREMENTAL_CLEANUP: bool = os.getenv("ENABLE_INCREMENTAL_CLEANUP", "true").lower() == "true"
+    
     # Performance Optimization Settings
-    MAX_MEMORY_USAGE_MB: int = int(os.getenv("MAX_MEMORY_USAGE_MB", "1024"))
-    ENABLE_PERFORMANCE_MONITORING: bool = os.getenv("ENABLE_PERFORMANCE_MONITORING", "true").lower() == "true"
-    PERFORMANCE_MONITORING_INTERVAL: int = int(os.getenv("PERFORMANCE_MONITORING_INTERVAL", "30"))
     API_CACHE_TTL_SECONDS: int = int(os.getenv("API_CACHE_TTL_SECONDS", "300"))
     API_CACHE_MAX_SIZE: int = int(os.getenv("API_CACHE_MAX_SIZE", "100"))
-    UI_RENDER_TIMEOUT_SECONDS: int = int(os.getenv("UI_RENDER_TIMEOUT_SECONDS", "30"))
+    
+    # Batch Processing Settings
     BATCH_PROCESSING_SIZE: int = int(os.getenv("BATCH_PROCESSING_SIZE", "10"))
     
     @classmethod

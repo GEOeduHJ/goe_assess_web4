@@ -31,12 +31,70 @@ class FileService:
     DESCRIPTIVE_REQUIRED_COLUMNS = ['학생 이름', '반', '답안']
     MAP_REQUIRED_COLUMNS = ['학생 이름', '반']
     
+    # English column name mappings
+    COLUMN_MAPPINGS = {
+        '학생 이름': ['학생 이름', '이름', 'Student', 'student', 'Student Name', 'student name'],
+        '반': ['반', 'Class', 'class'],
+        '답안': ['답안', 'Answer', 'answer']
+    }
+    
     def __init__(self):
         """FileService 초기화"""
         pass
-    
+
+    def _map_column_names(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Map English column names to Korean equivalents.
+        
+        Args:
+            df: DataFrame with potential English column names
+            
+        Returns:
+            DataFrame with Korean column names
+        """
+        print(f"DEBUG: Original columns before mapping: {list(df.columns)}")
+        
+        # Debug: Check each column for hidden characters
+        for i, col in enumerate(df.columns):
+            print(f"DEBUG: Column {i}: {repr(col)} (length: {len(col)})")
+            print(f"DEBUG: Column {i} hex: {col.encode('utf-8').hex()}")
+        
+        # Create a copy to avoid modifying the original DataFrame
+        df_mapped = df.copy()
+        
+        # Clean column names - remove leading/trailing whitespace and normalize
+        cleaned_columns = {}
+        for col in df.columns:
+            cleaned_col = str(col).strip()  # Remove leading/trailing whitespace
+            cleaned_columns[col] = cleaned_col
+            if col != cleaned_col:
+                print(f"DEBUG: Cleaned column '{col}' -> '{cleaned_col}'")
+        
+        # Apply column cleaning
+        df_mapped = df_mapped.rename(columns=cleaned_columns)
+        print(f"DEBUG: Columns after cleaning: {list(df_mapped.columns)}")
+        
+        # Map column names
+        column_mapping = {}
+        for korean_name, english_variants in self.COLUMN_MAPPINGS.items():
+            for col in df_mapped.columns:
+                if col in english_variants:
+                    column_mapping[col] = korean_name
+                    print(f"DEBUG: Mapping '{col}' -> '{korean_name}'")
+                    break
+        
+        print(f"DEBUG: Column mapping applied: {column_mapping}")
+        
+        # Apply the mapping
+        df_mapped = df_mapped.rename(columns=column_mapping)
+        
+        print(f"DEBUG: Final columns after mapping: {list(df_mapped.columns)}")
+        return df_mapped
+
     def validate_excel_format(self, file_path: str, grading_type: str) -> Dict[str, Any]:
         """Excel 파일 형식 검증"""
+        print(f"DEBUG: validate_excel_format called with grading_type='{grading_type}'")
+        
         try:
             if not os.path.exists(file_path):
                 error_info = handle_error(
@@ -67,23 +125,12 @@ class FileService:
                     'error_info': error_info
                 }
             
-            try:
-                df = pd.read_excel(file_path)
-            except Exception as e:
-                error_info = handle_error(
-                    e,
-                    ErrorType.FILE_PROCESSING,
-                    context=f"validate_excel_format: pandas read_excel failed for {file_path}",
-                    user_context="Excel 파일 읽기"
-                )
-                return {
-                    'success': False,
-                    'message': error_info.user_message,
-                    'data': None,
-                    'error_info': error_info
-                }
+            df = pd.read_excel(file_path)
+            # Map column names to Korean equivalents
+            df_mapped = self._map_column_names(df)
+            print(f"DEBUG: Excel file loaded successfully, mapped columns: {list(df_mapped.columns)}")
             
-            if df.empty:
+            if df_mapped.empty:
                 error_info = handle_error(
                     ValueError("Excel 파일이 비어있습니다"),
                     ErrorType.VALIDATION,
@@ -97,12 +144,27 @@ class FileService:
                     'error_info': error_info
                 }
             
-            required_columns = (self.DESCRIPTIVE_REQUIRED_COLUMNS 
-                              if grading_type == 'descriptive' 
-                              else self.MAP_REQUIRED_COLUMNS)
+            # Define required columns directly to avoid any encoding issues
+            if grading_type == 'descriptive':
+                required_columns = self.DESCRIPTIVE_REQUIRED_COLUMNS
+            else:
+                # Map grading only requires student name and class
+                required_columns = self.MAP_REQUIRED_COLUMNS
             
-            missing_columns = [col for col in required_columns if col not in df.columns]
+            print(f"DEBUG: Required columns for '{grading_type}': {required_columns}")
+            print(f"DEBUG: File columns: {list(df_mapped.columns)}")
+            
+            # Check if all required columns are present
+            missing_columns = [col for col in required_columns if col not in df_mapped.columns]
+            print(f"DEBUG: Missing columns check: {missing_columns}")
+            print(f"DEBUG: Column comparison results:")
+            for req_col in required_columns:
+                is_present = req_col in df_mapped.columns
+                print(f"  '{req_col}' in file columns: {is_present}")
+            
             if missing_columns:
+                print(f"DEBUG: Missing columns detected: {missing_columns}")
+                print(f"DEBUG: Missing columns repr: {repr(missing_columns)}")
                 error_info = handle_error(
                     ValueError(f"필수 컬럼 누락: {missing_columns}"),
                     ErrorType.VALIDATION,
@@ -116,16 +178,16 @@ class FileService:
                     'error_info': error_info
                 }
             
-            validation_result = self._validate_excel_data(df, grading_type)
+            validation_result = self._validate_excel_data(df_mapped, grading_type)
             if not validation_result['success']:
                 return validation_result
             
             return {
                 'success': True,
                 'message': 'Excel 파일 형식이 올바릅니다.',
-                'data': df
+                'data': df_mapped
             }
-            
+
         except Exception as e:
             error_info = handle_error(
                 e,
@@ -143,9 +205,12 @@ class FileService:
     def _validate_excel_data(self, df: pd.DataFrame, grading_type: str) -> Dict[str, Any]:
         """Excel 데이터 내용 유효성 검증"""
         try:
-            required_columns = (self.DESCRIPTIVE_REQUIRED_COLUMNS 
-                              if grading_type == 'descriptive' 
-                              else self.MAP_REQUIRED_COLUMNS)
+            # Define required columns directly to avoid any encoding issues
+            if grading_type == 'descriptive':
+                required_columns = self.DESCRIPTIVE_REQUIRED_COLUMNS
+            else:
+                # Map grading only requires student name and class
+                required_columns = self.MAP_REQUIRED_COLUMNS
             
             # Check for null values in required columns
             for col in required_columns:

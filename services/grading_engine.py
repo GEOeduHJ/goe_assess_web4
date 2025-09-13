@@ -17,6 +17,7 @@ from models.student_model import Student
 from models.rubric_model import Rubric
 from models.result_model import GradingResult, GradingTimer
 from services.llm_service import LLMService, GradingType
+from services.rag_service import RAGService, format_retrieved_content
 from config import config
 
 
@@ -134,6 +135,7 @@ class SequentialGradingEngine:
         # Callbacks
         self.progress_callback: Optional[Callable] = None
         self.student_completed_callback: Optional[Callable] = None
+        self.grading_completed_callback: Optional[Callable] = None
         self.error_callback: Optional[Callable] = None
     
     def set_progress_callback(self, callback: Callable[[GradingProgress], None]):
@@ -143,6 +145,10 @@ class SequentialGradingEngine:
     def set_student_completed_callback(self, callback: Callable[[StudentGradingStatus], None]):
         """Set callback for individual student completion."""
         self.student_completed_callback = callback
+    
+    def set_grading_completed_callback(self, callback: Callable[[int], None]):
+        """Set callback for overall grading completion."""
+        self.grading_completed_callback = callback
     
     def set_error_callback(self, callback: Callable[[str, Exception], None]):
         """Set callback for error handling."""
@@ -160,7 +166,9 @@ class SequentialGradingEngine:
         model_type: str,
         grading_type: str,
         references: Optional[List[str]] = None,
-        max_retries: Optional[int] = None
+        groq_model_name: str = "qwen/qwen3-32b",
+        max_retries: Optional[int] = None,
+        uploaded_files: Optional[List] = None  # New parameter for on-demand RAG processing
     ) -> List[GradingResult]:
         """
         Grade multiple students sequentially with comprehensive progress tracking.
@@ -171,7 +179,9 @@ class SequentialGradingEngine:
             model_type: LLM model to use
             grading_type: Type of grading (descriptive/map)
             references: Reference materials from RAG
+            groq_model_name: Specific Groq model to use (default: qwen/qwen3-32b)
             max_retries: Maximum retry attempts per student
+            uploaded_files: Uploaded reference files for on-demand RAG processing
             
         Returns:
             List of grading results
@@ -195,8 +205,10 @@ class SequentialGradingEngine:
                     logger.info("Grading cancelled by user")
                     break
                 
-                # Update current student index
+                # Update current student index and info
                 self.progress.current_student_index = i
+                self.progress.current_student_name = student.name
+                self.progress.current_student_class = student.class_number
                 self._notify_progress_update()
                 
                 # Get student status
@@ -209,7 +221,9 @@ class SequentialGradingEngine:
                     model_type=model_type,
                     grading_type=grading_type,
                     references=references,
-                    max_retries=max_retries
+                    groq_model_name=groq_model_name,
+                    max_retries=max_retries,
+                    uploaded_files=uploaded_files  # Pass uploaded files for on-demand processing
                 )
                 
                 # Always append result (even error results)
@@ -242,10 +256,16 @@ class SequentialGradingEngine:
             raise
         
         finally:
-            # Finalize progress
+            # Finalize progress and notify completion
             if self.progress:
                 if not self.is_cancelled:
                     logger.info(f"Sequential grading completed. {len(results)}/{len(students)} students graded successfully")
+                    # Only notify grading completion callback (not progress callback)
+                    if self.grading_completed_callback:
+                        logger.info(f"Calling grading completion callback with {len(results)} results")
+                        self.grading_completed_callback(len(results))
+                    else:
+                        logger.warning("No grading completion callback set!")
                 else:
                     logger.info(f"Sequential grading cancelled. {len(results)}/{len(students)} students completed before cancellation")
         
@@ -270,7 +290,9 @@ class SequentialGradingEngine:
         model_type: str,
         grading_type: str,
         references: Optional[List[str]],
-        max_retries: int
+        max_retries: int,
+        groq_model_name: str = "qwen/qwen3-32b",
+        uploaded_files: Optional[List] = None  # New parameter for on-demand RAG processing
     ) -> Optional[GradingResult]:
         """
         Grade a single student with retry mechanism.
@@ -282,6 +304,8 @@ class SequentialGradingEngine:
             grading_type: Type of grading
             references: Reference materials
             max_retries: Maximum retry attempts
+            groq_model_name: Specific Groq model to use (default: qwen/qwen3-32b)
+            uploaded_files: Uploaded reference files for on-demand RAG processing
             
         Returns:
             Grading result if successful, None if failed
@@ -300,13 +324,31 @@ class SequentialGradingEngine:
             try:
                 logger.info(f"Grading student {student.name} (attempt {attempt + 1}/{max_retries + 1})")
                 
+                # For descriptive grading with uploaded files, process documents on-demand
+                processed_references = references
+                if grading_type == "descriptive" and uploaded_files and student.has_text_answer:
+                    try:
+                        rag_service = RAGService()
+                        rag_result = rag_service.process_documents_for_student(
+                            uploaded_files, 
+                            student.answer
+                        )
+                        
+                        if rag_result.success:
+                            processed_references = rag_result.content
+                        else:
+                            logger.warning(f"RAG processing failed for student {student.name}: {rag_result.error_message}")
+                    except Exception as e:
+                        logger.warning(f"RAG processing error for student {student.name}: {e}")
+                
                 # Call LLM service for grading
                 result = self.llm_service.grade_student_sequential(
                     student=student,
                     rubric=rubric,
                     model_type=model_type,
                     grading_type=grading_type,
-                    references=references
+                    references=processed_references,
+                    groq_model_name=groq_model_name
                 )
                 
                 # Check if this is an error result (total_score = 0 and error message in feedback)
@@ -435,7 +477,9 @@ class SequentialGradingEngine:
         model_type: str,
         grading_type: str,
         references: Optional[List[str]] = None,
-        max_retries: Optional[int] = None
+        groq_model_name: str = "qwen/qwen3-32b",
+        max_retries: Optional[int] = None,
+        uploaded_files: Optional[List] = None  # New parameter for on-demand RAG processing
     ) -> List[GradingResult]:
         """
         Retry grading for failed students only.
@@ -445,7 +489,9 @@ class SequentialGradingEngine:
             model_type: LLM model to use
             grading_type: Type of grading
             references: Reference materials
+            groq_model_name: Specific Groq model to use (default: qwen/qwen3-32b)
             max_retries: Maximum retry attempts
+            uploaded_files: Uploaded reference files for on-demand RAG processing
             
         Returns:
             List of newly successful results
@@ -472,7 +518,9 @@ class SequentialGradingEngine:
                 model_type=model_type,
                 grading_type=grading_type,
                 references=references,
-                max_retries=max_retries
+                groq_model_name=groq_model_name,
+                max_retries=max_retries,
+                uploaded_files=uploaded_files  # Pass uploaded files for on-demand processing
             )
             
             if result:

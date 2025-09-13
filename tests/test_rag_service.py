@@ -223,30 +223,32 @@ class TestRAGUtilityFunctions:
         formatted = format_retrieved_content([])
         assert formatted == ""
         
-        # Test with results
-        results = [
-            {
-                "content": "첫 번째 참고 내용",
-                "similarity_score": 0.9,
-                "metadata": {"source": "test1.pdf"}
-            },
-            {
-                "content": "두 번째 참고 내용", 
-                "similarity_score": 0.8,
-                "metadata": {"source": "test2.pdf"}
-            }
+        # Test with short results
+        short_results = [
+            "첫 번째 참고 내용입니다.",
+            "두 번째 참고 내용입니다."
         ]
         
-        formatted = format_retrieved_content(results)
-        
+        formatted = format_retrieved_content(short_results)
         assert "참고자료 1" in formatted
         assert "참고자료 2" in formatted
         assert "첫 번째 참고 내용" in formatted
         assert "두 번째 참고 내용" in formatted
-        assert "test1.pdf" in formatted
-        assert "test2.pdf" in formatted
-        assert "0.900" in formatted
-        assert "0.800" in formatted
+        
+        # Test with long results that need truncation
+        long_results = [
+            "이것은 매우 긴 참고 내용입니다. " * 20 + "이 내용은 300자를 훨씬 넘어서 잘려나가야 합니다.",
+            "이것도 매우 긴 참고 내용입니다. " * 15 + "이 내용도 300자를 넘어서 잘려나가야 합니다."
+        ]
+        
+        formatted_long = format_retrieved_content(long_results)
+        assert "..." in formatted_long  # Should be truncated
+        
+        # Check that each formatted chunk doesn't exceed 300 characters
+        chunks = formatted_long.split('\n\n')
+        for chunk in chunks:
+            content = chunk.split(':\n', 1)[1] if ':\n' in chunk else chunk
+            assert len(content) <= 303  # 300 + "..." = 303
 
 
 class TestEmbeddingUtils:
