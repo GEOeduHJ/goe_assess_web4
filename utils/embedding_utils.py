@@ -1,8 +1,8 @@
 """
-Embedding utilities for the Geography Auto-Grading System
+지리 자동 채점 시스템을 위한 임베딩 유틸리티
 
-This module provides utility functions for text preprocessing, 
-embedding operations, and vector similarity calculations.
+이 모듈은 텍스트 전처리, 임베딩 연산, 벡터 유사도 계산을 위한
+유틸리티 함수들을 제공합니다.
 """
 
 import re
@@ -13,24 +13,24 @@ from sentence_transformers import SentenceTransformer
 
 def preprocess_text(text: str) -> str:
     """
-    Preprocess text for better embedding quality.
+    더 나은 임베딩 품질을 위한 텍스트 전처리
     
     Args:
-        text: Raw text to preprocess
+        text: 전처리할 원본 텍스트
         
     Returns:
-        Cleaned and normalized text
+        정리되고 정규화된 텍스트
     """
     if not text:
         return ""
     
-    # Remove extra whitespace and normalize
+    # 여분의 공백 제거 및 정규화
     text = re.sub(r'\s+', ' ', text.strip())
     
-    # Remove special characters but keep Korean, English, numbers, and basic punctuation
+    # 특수 문자 제거하되 한국어, 영어, 숫자, 기본 구두점은 유지
     text = re.sub(r'[^\w\s가-힣.,!?()-]', ' ', text)
     
-    # Remove multiple consecutive punctuation
+    # 연속된 구두점 제거
     text = re.sub(r'[.,!?]{2,}', '.', text)
     
     return text.strip()
@@ -38,33 +38,33 @@ def preprocess_text(text: str) -> str:
 
 def calculate_text_similarity(text1: str, text2: str, model: SentenceTransformer) -> float:
     """
-    Calculate semantic similarity between two texts using embeddings.
+    임베딩을 사용하여 두 텍스트 간의 의미적 유사도를 계산합니다.
     
     Args:
-        text1: First text
-        text2: Second text  
-        model: Loaded SentenceTransformer model
+        text1: 첫 번째 텍스트
+        text2: 두 번째 텍스트
+        model: 로드된 SentenceTransformer 모델
         
     Returns:
-        Similarity score between 0 and 1
+        0과 1 사이의 유사도 점수
     """
     try:
-        # Preprocess texts
+        # 텍스트 전처리
         text1 = preprocess_text(text1)
         text2 = preprocess_text(text2)
         
         if not text1 or not text2:
             return 0.0
         
-        # Generate embeddings
+        # 임베딩 생성
         embeddings = model.encode([text1, text2], convert_to_numpy=True)
         
-        # Calculate cosine similarity
+        # 코사인 유사도 계산
         similarity = np.dot(embeddings[0], embeddings[1]) / (
             np.linalg.norm(embeddings[0]) * np.linalg.norm(embeddings[1])
         )
         
-        # Ensure similarity is between 0 and 1
+        # 유사도가 0과 1 사이인지 확인
         return max(0.0, min(1.0, float(similarity)))
         
     except Exception:
@@ -73,14 +73,14 @@ def calculate_text_similarity(text1: str, text2: str, model: SentenceTransformer
 
 def validate_embedding_dimension(embeddings: np.ndarray, expected_dim: int) -> bool:
     """
-    Validate that embeddings have the expected dimension.
+    임베딩이 예상 차원을 가지는지 검증합니다.
     
     Args:
-        embeddings: Numpy array of embeddings
-        expected_dim: Expected embedding dimension
+        embeddings: 임베딩의 Numpy 배열
+        expected_dim: 예상 임베딩 차원
         
     Returns:
-        True if dimensions match, False otherwise
+        차원이 일치하면 True, 아니면 False
     """
     if embeddings is None or embeddings.size == 0:
         return False
@@ -90,13 +90,13 @@ def validate_embedding_dimension(embeddings: np.ndarray, expected_dim: int) -> b
 
 def normalize_embeddings(embeddings: np.ndarray) -> np.ndarray:
     """
-    Normalize embeddings to unit length for better similarity calculations.
+    더 나은 유사도 계산을 위해 임베딩을 단위 길이로 정규화합니다.
     
     Args:
-        embeddings: Numpy array of embeddings
+        embeddings: 임베딩의 Numpy 배열
         
     Returns:
-        Normalized embeddings
+        정규화된 임베딩
     """
     if embeddings is None or embeddings.size == 0:
         return embeddings

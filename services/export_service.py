@@ -1,6 +1,6 @@
 """
-Export service for generating Excel files and other export formats.
-Handles result data formatting and file generation for download.
+채점 결과의 Excel 파일 및 기타 내보내기 형식 생성 서비스
+결과 데이터 포맷팅 및 다운로드용 파일 생성을 처리합니다.
 """
 
 import pandas as pd
@@ -14,39 +14,39 @@ from models.result_model import GradingResult
 
 
 class ExportService:
-    """Service for exporting grading results to various formats."""
+    """채점 결과를 다양한 형식으로 내보내는 서비스"""
     
     def __init__(self):
-        """Initialize the export service."""
+        """내보내기 서비스 초기화"""
         self.logger = logging.getLogger(__name__)
     
     def create_results_excel(self, results: List[GradingResult]) -> str:
         """
-        Create Excel file with comprehensive grading results.
-        Implements Requirements 6.3, 6.4 - Excel export with all result data
+        종합적인 채점 결과가 포함된 Excel 파일 생성
+        요구사항 6.3, 6.4 구현 - 모든 결과 데이터를 포함한 Excel 내보내기
         
         Args:
-            results: List of grading results to export
+            results: 내보낼 채점 결과 목록
             
         Returns:
-            str: Path to the created Excel file
+            str: 생성된 Excel 파일 경로
             
         Raises:
-            ValueError: If no results provided or invalid data
-            PermissionError: If unable to write to temporary directory
-            Exception: For other file creation errors
+            ValueError: 결과가 제공되지 않았거나 데이터가 유효하지 않은 경우
+            PermissionError: 임시 디렉토리에 쓸 수 없는 경우
+            Exception: 기타 파일 생성 오류
         """
         if not results:
             raise ValueError("채점 결과가 없어 Excel 파일을 생성할 수 없습니다.")
         
-        # Validate results data
+        # 결과 데이터 검증
         for i, result in enumerate(results):
             if not isinstance(result, GradingResult):
                 raise ValueError(f"결과 {i+1}번이 올바른 GradingResult 형식이 아닙니다.")
             
-            # Check for required attributes
+            # 필수 속성 확인
             try:
-                # Test access to all required attributes
+                # 모든 필수 속성에 대한 접근 테스트
                 _ = result.student_name
                 _ = result.student_class_number
                 _ = result.total_score
@@ -59,7 +59,7 @@ class ExportService:
                 _ = result.original_answer
                 _ = result.element_scores
                 
-                # Validate element scores
+                # 요소 점수 검증
                 for j, element in enumerate(result.element_scores):
                     if not hasattr(element, 'element_name'):
                         raise AttributeError(f"Element {j+1} missing 'element_name'")
@@ -77,10 +77,10 @@ class ExportService:
                 raise ValueError(f"결과 {i+1}번의 학생명이 비어있습니다.")
         
         try:
-            # Create temporary file with error handling
+            # 오류 처리와 함께 임시 파일 생성
             temp_dir = tempfile.gettempdir()
             
-            # Check if temp directory is writable
+            # 임시 디렉토리 쓰기 권한 확인
             if not os.access(temp_dir, os.W_OK):
                 raise PermissionError(f"임시 디렉토리에 쓰기 권한이 없습니다: {temp_dir}")
             
@@ -89,19 +89,19 @@ class ExportService:
             
             self.logger.info(f"Excel 파일 생성 시작: {excel_path}")
             
-            # Create Excel writer with error handling
+            # 오류 처리와 함께 Excel writer 생성
             try:
                 with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
-                    # Main results sheet
+                    # 메인 결과 시트
                     self._create_main_results_sheet(results, writer)
                     
-                    # Element scores detail sheet
+                    # 요소 점수 상세 시트
                     self._create_element_scores_sheet(results, writer)
                     
-                    # Summary statistics sheet
+                    # 요약 통계 시트
                     self._create_summary_sheet(results, writer)
                     
-                    # Feedback sheet
+                    # 피드백 시트
                     self._create_feedback_sheet(results, writer)
                     
             except PermissionError as e:
@@ -109,7 +109,7 @@ class ExportService:
             except Exception as e:
                 raise Exception(f"Excel 파일 작성 중 오류가 발생했습니다: {e}")
             
-            # Verify file was created successfully
+            # 파일이 성공적으로 생성되었는지 확인
             if not os.path.exists(excel_path):
                 raise Exception("Excel 파일이 생성되지 않았습니다.")
             
@@ -121,22 +121,22 @@ class ExportService:
             return excel_path
             
         except (ValueError, PermissionError) as e:
-            # Re-raise known exceptions
+            # 알려진 예외 재발생
             self.logger.error(f"Excel 파일 생성 실패: {e}")
             raise
         except Exception as e:
-            # Handle unexpected errors
+            # 예상치 못한 오류 처리
             error_msg = f"Excel 파일 생성 중 예상치 못한 오류가 발생했습니다: {e}"
             self.logger.error(error_msg)
             raise Exception(error_msg)
     
     def _create_main_results_sheet(self, results: List[GradingResult], writer: pd.ExcelWriter):
-        """Create the main results sheet with student overview."""
+        """학생 개요가 포함된 메인 결과 시트 생성"""
         try:
             main_data = []
             
             for result in results:
-                # Safely handle potentially missing data
+                # 누락될 수 있는 데이터를 안전하게 처리
                 row = {
                     '학생명': getattr(result, 'student_name', '') or '',
                     '반': getattr(result, 'student_class_number', '') or '',
@@ -150,7 +150,7 @@ class ExportService:
                     '전체피드백': getattr(result, 'overall_feedback', '') or '[피드백 없음]'
                 }
                 
-                # Add element scores as separate columns
+                # 요소 점수를 별도 컬럼으로 추가
                 element_scores = getattr(result, 'element_scores', [])
                 for element in element_scores:
                     element_name = getattr(element, 'element_name', '알수없음') or '알수없음'
@@ -168,15 +168,15 @@ class ExportService:
             df_main = pd.DataFrame(main_data)
             df_main.to_excel(writer, sheet_name='채점결과', index=False)
             
-            # Format the worksheet
+            # 워크시트 서식 설정
             worksheet = writer.sheets['채점결과']
             
-            # Auto-adjust column widths with error handling
+            # 오류 처리와 함께 컬럼 너비 자동 조정
             for column in df_main:
                 try:
                     column_length = max(df_main[column].astype(str).map(len).max(), len(column))
                     col_idx = df_main.columns.get_loc(column)
-                    if col_idx < 26:  # Only handle A-Z columns for simplicity
+                    if col_idx < 26:  # 간소화를 위해 A-Z 컬럼만 처리
                         worksheet.column_dimensions[chr(65 + col_idx)].width = min(column_length + 2, 50)
                 except Exception as e:
                     self.logger.warning(f"열 너비 조정 실패 ({column}): {e}")

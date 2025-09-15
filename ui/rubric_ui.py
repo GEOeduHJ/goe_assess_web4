@@ -1,6 +1,6 @@
 """
-Rubric UI components for dynamic rubric configuration.
-Handles evaluation criteria creation, modification, and validation.
+동적 루브릭 구성을 위한 루브릭 UI 컴포넌트
+평가 기준 생성, 수정, 검증을 처리합니다.
 """
 
 import streamlit as st
@@ -11,14 +11,14 @@ from models.rubric_model import Rubric, EvaluationElement, EvaluationCriteria
 
 
 class RubricUI:
-    """UI controller for dynamic rubric configuration."""
+    """동적 루브릭 구성을 위한 UI 컨트롤러"""
     
     def __init__(self):
-        """Initialize the rubric UI controller."""
+        """루브릭 UI 컨트롤러를 초기화합니다."""
         self.initialize_session_state()
     
     def initialize_session_state(self):
-        """Initialize Streamlit session state for rubric data."""
+        """루브릭 데이터를 위한 Streamlit 세션 상태를 초기화합니다."""
         if 'rubric' not in st.session_state:
             st.session_state.rubric = Rubric(name="새 루브릭")
         
@@ -27,25 +27,25 @@ class RubricUI:
     
     def render_rubric_builder(self):
         """
-        Render the main rubric builder interface.
-        Implements Requirements 3.1, 3.2, 3.3, 3.4
+        메인 루브릭 빌더 인터페이스를 렌더링합니다.
+        요구사항 3.1, 3.2, 3.3, 3.4 구현
         """
         st.markdown("## 📋 평가 루브릭 설정")
         st.markdown("채점에 사용할 평가 요소와 채점 기준을 설정해주세요.")
         
-        # Rubric management buttons
+        # 루브릭 관리 버튼
         self.render_rubric_management_buttons()
         
-        # Evaluation elements section
+        # 평가 요소 섹션
         self.render_evaluation_elements()
         
-        # Add new element section
+        # 새 요소 추가 섹션
         self.render_add_element_section()
         
-        # Rubric preview and validation
+        # 루브릭 미리보기 및 검증
         self.render_rubric_preview()
         
-        # Navigation buttons
+        # 탐색 버튼
         self.render_rubric_navigation()
     
     def render_rubric_management_buttons(self):

@@ -1,9 +1,8 @@
 """
-Sequential Grading Execution Engine for Geography Auto-Grading System
+지리 자동 채점 시스템의 순차 채점 실행 엔진
 
-This module provides the core sequential grading execution engine that orchestrates
-the grading process for multiple students with real-time progress tracking,
-error handling, and retry mechanisms.
+이 모듈은 실시간 진행 상황 추적, 오류 처리, 재시도 메커니즘을 통해
+여러 학생의 채점 프로세스를 조율하는 핵심 순차 채점 실행 엔진을 제공합니다.
 """
 
 import time
@@ -21,13 +20,13 @@ from services.rag_service import RAGService, format_retrieved_content
 from config import config
 
 
-# Configure logging
+# 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class GradingStatus(Enum):
-    """Enumeration for grading status states."""
+    """채점 상태를 나타내는 열거형"""
     NOT_STARTED = "not_started"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
@@ -38,16 +37,16 @@ class GradingStatus(Enum):
 @dataclass
 class StudentGradingStatus:
     """
-    Represents the grading status for an individual student.
+    개별 학생의 채점 상태를 나타냅니다.
     
     Attributes:
-        student: Student being graded
-        status: Current grading status
-        result: Grading result (if completed)
-        error_message: Error message (if failed)
-        attempt_count: Number of grading attempts
-        start_time: When grading started
-        end_time: When grading completed/failed
+        student: 채점 중인 학생
+        status: 현재 채점 상태
+        result: 채점 결과 (완료된 경우)
+        error_message: 오류 메시지 (실패한 경우)
+        attempt_count: 채점 시도 횟수
+        start_time: 채점 시작 시간
+        end_time: 채점 완료/실패 시간
     """
     student: Student
     status: GradingStatus = GradingStatus.NOT_STARTED
@@ -59,7 +58,7 @@ class StudentGradingStatus:
     
     @property
     def processing_time(self) -> float:
-        """Get processing time in seconds."""
+        """처리 시간을 초 단위로 가져옵니다."""
         if self.start_time and self.end_time:
             return (self.end_time - self.start_time).total_seconds()
         return 0.0
@@ -68,16 +67,16 @@ class StudentGradingStatus:
 @dataclass
 class GradingProgress:
     """
-    Represents the overall grading progress.
+    전체 채점 진행 상황을 나타냅니다.
     
     Attributes:
-        total_students: Total number of students to grade
-        completed_students: Number of students completed
-        failed_students: Number of students failed
-        current_student_index: Index of currently processing student
-        start_time: When batch grading started
-        estimated_completion_time: Estimated completion time
-        average_processing_time: Average time per student
+        total_students: 채점할 총 학생 수
+        completed_students: 완료된 학생 수
+        failed_students: 실패한 학생 수
+        current_student_index: 현재 처리 중인 학생 인덱스
+        start_time: 배치 채점 시작 시간
+        estimated_completion_time: 예상 완료 시간
+        average_processing_time: 학생당 평균 처리 시간
     """
     total_students: int
     completed_students: int = 0
@@ -89,18 +88,18 @@ class GradingProgress:
     
     @property
     def progress_percentage(self) -> float:
-        """Calculate progress percentage."""
+        """진행률 퍼센트를 계산합니다."""
         if self.total_students == 0:
             return 0.0
         return ((self.completed_students + self.failed_students) / self.total_students) * 100
     
     @property
     def remaining_students(self) -> int:
-        """Get number of remaining students."""
+        """남은 학생 수를 가져옵니다."""
         return self.total_students - self.completed_students - self.failed_students
     
     def update_estimates(self, processing_times: List[float]):
-        """Update time estimates based on completed processing times."""
+        """완료된 처리 시간을 기반으로 시간 추정치를 업데이트합니다."""
         if processing_times:
             self.average_processing_time = sum(processing_times) / len(processing_times)
             
@@ -111,24 +110,24 @@ class GradingProgress:
 
 class SequentialGradingEngine:
     """
-    Sequential grading execution engine with progress tracking and error handling.
+    진행 상황 추적 및 오류 처리 기능이 있는 순차 채점 실행 엔진
     
-    This engine orchestrates the grading process for multiple students,
-    providing real-time progress updates, error recovery, and detailed logging.
+    이 엔진은 여러 학생의 채점 프로세스를 조율하며,
+    실시간 진행 상황 업데이트, 오류 복구, 상세 로깅을 제공합니다.
     """
     
     def __init__(self, llm_service: Optional[LLMService] = None):
         """
-        Initialize the grading engine.
+        채점 엔진을 초기화합니다.
         
         Args:
-            llm_service: Optional LLM service instance (creates new if not provided)
+            llm_service: 선택적 LLM 서비스 인스턴스 (제공되지 않으면 새로 생성)
         """
         self.llm_service = llm_service or LLMService()
         self.is_cancelled = False
         self.current_batch_id = None
         
-        # Progress tracking
+        # 진행 상황 추적
         self.student_statuses: List[StudentGradingStatus] = []
         self.progress: Optional[GradingProgress] = None
         

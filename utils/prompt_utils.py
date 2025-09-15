@@ -1,8 +1,8 @@
 """
-Prompt engineering utilities for the Geography Auto-Grading System.
+지리 자동 채점 시스템을 위한 프롬프트 엔지니어링 유틸리티
 
-This module provides utility functions for creating structured prompts,
-validating responses, and handling prompt templates.
+이 모듈은 구조화된 프롬프트 생성, 응답 검증, 프롬프트 템플릿 처리를 위한
+유틸리티 함수들을 제공합니다.
 """
 
 import json
@@ -12,27 +12,27 @@ from models.rubric_model import Rubric, EvaluationElement
 
 
 class PromptTemplate:
-    """Template class for structured prompt generation."""
+    """구조화된 프롬프트 생성을 위한 템플릿 클래스"""
     
-    # System role templates
+    # 시스템 역할 템플릿
     SYSTEM_ROLES = {
         "descriptive": "당신은 지리 교과목 전문 채점자입니다. 학생의 서술형 답안을 분석하여 채점해주세요.",
         "map": "당신은 지리 교과목 전문 채점자입니다. 학생이 작성한 백지도 답안을 분석하여 채점해주세요."
     }
     
-    # Reference section template
+    # 참고 자료 섹션 템플릿
     REFERENCE_TEMPLATE = """
 다음은 채점 참고 자료입니다:
 {references}
 """
     
-    # Rubric section template
+    # 루브릭 섹션 템플릿
     RUBRIC_TEMPLATE = """
 다음은 평가 루브릭입니다:
 {rubric_details}
 """
     
-    # Answer section templates
+    # 답안 섹션 템플릿
     ANSWER_TEMPLATES = {
         "descriptive": """
 다음은 학생 답안입니다:
@@ -43,7 +43,7 @@ class PromptTemplate:
 """
     }
     
-    # Output format template
+    # 출력 형식 템플릿
     OUTPUT_FORMAT_TEMPLATE = """
 다음 JSON 형식으로 채점 결과를 제공해주세요:
 {{
@@ -63,20 +63,20 @@ class PromptTemplate:
 
 def format_references(references: List[str]) -> str:
     """
-    Format reference materials for prompt inclusion.
+    프롬프트 포함을 위한 참고 자료 포맷팅
     
     Args:
-        references: List of reference text chunks
+        references: 참고 텍스트 청크 목록
         
     Returns:
-        Formatted reference string
+        포맷팅된 참고 자료 문자열
     """
     if not references:
         return ""
     
     formatted_refs = []
     for i, ref in enumerate(references, 1):
-        # Clean and truncate reference if too long
+        # 참고 자료가 너무 길면 정리하고 자르기
         clean_ref = clean_text(ref)
         if len(clean_ref) > 500:
             clean_ref = clean_ref[:500] + "..."
@@ -88,13 +88,13 @@ def format_references(references: List[str]) -> str:
 
 def format_rubric(rubric: Rubric) -> str:
     """
-    Format rubric for prompt inclusion.
+    프롬프트 포함을 위한 루브릭 포맷팅
     
     Args:
-        rubric: Evaluation rubric
+        rubric: 평가 루브릭
         
     Returns:
-        Formatted rubric string
+        포맷팅된 루브릭 문자열
     """
     rubric_parts = []
     

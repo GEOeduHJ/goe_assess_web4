@@ -1,8 +1,8 @@
 """
-Comprehensive Error Handling System for Geography Auto-Grading Platform
+지리 자동 채점 플랫폼을 위한 종합적인 오류 처리 시스템
 
-This module provides centralized error handling, user-friendly error messages,
-and recovery mechanisms for various error scenarios.
+이 모듈은 중앙화된 오류 처리, 사용자 친화적인 오류 메시지,
+다양한 오류 시나리오에 대한 복구 메커니즘을 제공합니다.
 """
 
 import logging
@@ -15,7 +15,7 @@ import streamlit as st
 
 
 class ErrorType(Enum):
-    """Enumeration of error types for categorized handling."""
+    """범주화된 처리를 위한 오류 유형 열거형"""
     FILE_PROCESSING = "file_processing"
     API_COMMUNICATION = "api_communication"
     VALIDATION = "validation"
@@ -28,7 +28,7 @@ class ErrorType(Enum):
 
 
 class ErrorSeverity(Enum):
-    """Error severity levels."""
+    """오류 심각도 수준"""
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -37,7 +37,7 @@ class ErrorSeverity(Enum):
 
 @dataclass
 class ErrorInfo:
-    """Structured error information."""
+    """구조화된 오류 정보"""
     error_type: ErrorType
     severity: ErrorSeverity
     message: str
@@ -52,9 +52,9 @@ class ErrorInfo:
 
 class ErrorHandler:
     """
-    Centralized error handler for the geography auto-grading platform.
+    지리 자동 채점 플랫폼을 위한 중앙화된 오류 처리기
     
-    Provides user-friendly error messages, retry mechanisms, and recovery strategies.
+    사용자 친화적인 오류 메시지, 재시도 메커니즘, 복구 전략을 제공합니다.
     """
     
     def __init__(self):

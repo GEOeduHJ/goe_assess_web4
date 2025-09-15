@@ -1,6 +1,6 @@
 """
-Results display and visualization UI components.
-Handles student result cards, score visualization, feedback display, and grading time tracking.
+결과 표시 및 시각화 UI 컴포넌트
+학생 결과 카드, 점수 시각화, 피드백 표시, 채점 시간 추적을 처리합니다.
 """
 
 import streamlit as st
@@ -15,14 +15,14 @@ from models.result_model import GradingResult, ElementScore
 
 
 class ResultsUI:
-    """UI controller for displaying and visualizing grading results."""
+    """채점 결과 표시 및 시각화를 위한 UI 컨트롤러"""
     
     def __init__(self):
-        """Initialize the results UI controller."""
+        """결과 UI 컨트롤러를 초기화합니다."""
         self.initialize_session_state()
     
     def initialize_session_state(self):
-        """Initialize Streamlit session state for results display."""
+        """결과 표시를 위한 Streamlit 세션 상태를 초기화합니다."""
         if 'selected_student_result' not in st.session_state:
             st.session_state.selected_student_result = None
         
@@ -37,10 +37,10 @@ class ResultsUI:
     
     def render_results_page(self, results: List[GradingResult]):
         """
-        Render the main results page with all visualization components.
+        모든 시각화 컴포넌트가 포함된 메인 결과 페이지를 렌더링합니다.
         
         Args:
-            results: List of grading results to display
+            results: 표시할 채점 결과 목록
         """
         if not results:
             st.info("📋 아직 채점 결과가 없습니다.")
@@ -49,13 +49,13 @@ class ResultsUI:
         st.markdown("## 📊 채점 결과")
         st.markdown("---")
         
-        # Results overview and statistics
+        # 결과 개요 및 통계
         self.render_results_overview(results)
         
-        # View mode selection
+        # 보기 모드 선택
         self.render_view_mode_selector()
         
-        # Render content based on selected view mode
+        # 선택된 보기 모드에 따라 콘텐츠 렌더링
         if st.session_state.results_view_mode == "overview":
             self.render_overview_dashboard(results)
         elif st.session_state.results_view_mode == "individual":
@@ -63,26 +63,26 @@ class ResultsUI:
         elif st.session_state.results_view_mode == "analytics":
             self.render_analytics_dashboard(results)
         
-        # Export options
+        # 내보내기 옵션
         self.render_export_options(results)
     
     def render_results_overview(self, results: List[GradingResult]):
-        """Render high-level results overview with key metrics."""
+        """주요 지표가 포함된 상위 수준 결과 개요를 렌더링합니다."""
         st.markdown("### 📈 전체 개요")
         
-        # Calculate summary statistics
+        # 요약 통계 계산
         total_students = len(results)
         avg_score = statistics.mean([r.percentage for r in results])
         avg_time = statistics.mean([r.grading_time_seconds for r in results])
         total_time = sum([r.grading_time_seconds for r in results])
         
-        # Grade distribution
+        # 등급 분포
         grade_counts = {}
         for result in results:
             grade = result.grade_letter
             grade_counts[grade] = grade_counts.get(grade, 0) + 1
         
-        # Display metrics in columns
+        # 컬럼에 지표 표시
         col1, col2, col3, col4, col5 = st.columns(5)
         
         with col1:

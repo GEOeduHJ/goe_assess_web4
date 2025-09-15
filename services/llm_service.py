@@ -1,9 +1,9 @@
 """
-LLM Service for Geography Auto-Grading System
+지리 자동 채점 시스템의 LLM 서비스
 
-This module provides LLM integration for automated grading using Google Gemini and Groq APIs.
-Supports both text-based (descriptive) and image-based (map) grading with structured prompts.
-Includes performance optimizations for memory usage, API call efficiency, and response caching.
+이 모듈은 Google Gemini 및 Groq API를 사용한 자동 채점을 위한 LLM 통합을 제공합니다.
+구조화된 프롬프트를 통해 텍스트 기반(서술형) 및 이미지 기반(지도) 채점을 모두 지원합니다.
+메모리 사용량, API 호출 효율성, 응답 캐싱에 대한 성능 최적화가 포함되어 있습니다.
 """
 
 import json
@@ -16,17 +16,17 @@ from functools import lru_cache
 import hashlib
 import inspect
 
-# Workaround for proxy issue with httpx in Groq client
+# Groq 클라이언트의 httpx 프록시 문제 해결책
 import groq._base_client
 original_sync_httpx_client_wrapper_init = groq._base_client.SyncHttpxClientWrapper.__init__
 
 def patched_sync_httpx_client_wrapper_init(self, **kwargs):
-    # Remove 'proxies' argument if present
+    # 'proxies' 인수가 있으면 제거
     if 'proxies' in kwargs:
         del kwargs['proxies']
     return original_sync_httpx_client_wrapper_init(self, **kwargs)
 
-# Apply the patch
+# 패치 적용
 groq._base_client.SyncHttpxClientWrapper.__init__ = patched_sync_httpx_client_wrapper_init
 
 import google.generativeai as genai
@@ -37,32 +37,32 @@ from models.student_model import Student
 from models.rubric_model import Rubric
 from models.result_model import GradingResult, ElementScore, GradingTimer
 from utils.error_handler import handle_error, retry_with_backoff, ErrorType, ErrorInfo
-# Performance optimization imports removed as part of system monitoring cleanup
+# 시스템 모니터링 정리의 일환으로 성능 최적화 import 제거
 
 
-# Configure logging
+# 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class LLMModelType:
-    """Enum-like class for LLM model types."""
+    """LLM 모델 유형을 위한 열거형 클래스"""
     GEMINI = "gemini"
     GROQ = "groq"
 
 
 class GradingType:
-    """Enum-like class for grading types."""
+    """채점 유형을 위한 열거형 클래스"""
     DESCRIPTIVE = "descriptive"  # 서술형
     MAP = "map"  # 백지도형
 
 
 class LLMService:
     """
-    Service for LLM-based automated grading.
+    LLM 기반 자동 채점을 위한 서비스
     
-    Supports Google Gemini (text + image) and Groq (text only) APIs
-    with structured prompt generation and response parsing.
+    구조화된 프롬프트 생성 및 응답 파싱과 함께 
+    Google Gemini (텍스트 + 이미지) 및 Groq (텍스트만) API를 지원합니다.
     """
     
     def __init__(self):

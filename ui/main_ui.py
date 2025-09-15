@@ -1,6 +1,6 @@
 """
-Main UI components for the geography auto-grading platform.
-Handles grading type selection, model selection, and file uploads.
+지리 자동 채점 플랫폼의 메인 UI 컴포넌트
+채점 유형 선택, 모델 선택, 파일 업로드를 처리합니다.
 """
 
 import streamlit as st
@@ -11,27 +11,59 @@ import tempfile
 import shutil
 
 
+def display_file_upload_error(error_info, filename: str = ""):
+    """파일 업로드 오류 표시 함수 (error_display_ui 대체)"""
+    if hasattr(error_info, 'user_message'):
+        message = error_info.user_message
+    else:
+        message = str(error_info)
+    
+    if filename:
+        st.error(f"📁 파일 '{filename}' 처리 오류: {message}")
+    else:
+        st.error(f"📁 파일 처리 오류: {message}")
+
+
+def display_error(error_info, show_details: bool = False):
+    """기본적인 오류 표시 함수 (error_display_ui 대체)"""
+    if hasattr(error_info, 'error_type'):
+        error_type = error_info.error_type.value
+    else:
+        error_type = "시스템 오류"
+    
+    if hasattr(error_info, 'user_message'):
+        message = error_info.user_message
+    else:
+        message = str(error_info)
+    
+    st.error(f"⚠️ {error_type}: {message}")
+    
+    if show_details and hasattr(error_info, 'technical_details'):
+        with st.expander("기술적 세부사항"):
+            st.code(error_info.technical_details)
+
+
 class GradingType(Enum):
-    """Enumeration for grading types."""
+    """채점 유형 열거형"""
     DESCRIPTIVE = "descriptive"
     MAP = "map"
 
 
 class LLMModel(Enum):
-    """Enumeration for available LLM models."""
+    """사용 가능한 LLM 모델 열거형"""
     GEMINI = "gemini"
     GROQ = "groq"
 
 
 class MainUI:
-    """Main UI controller for the geography auto-grading platform."""
+    """지리 자동 채점 플랫폼의 메인 UI 컨트롤러"""
     
     def __init__(self):
-        """Initialize the main UI controller."""
+        """메인 UI 컨트롤러 초기화"""
         self.initialize_session_state()
     
     def initialize_session_state(self):
-        """Initialize Streamlit session state variables."""
+        """Streamlit 세션 상태 변수들을 초기화합니다."""
         if 'grading_type' not in st.session_state:
             st.session_state.grading_type = None
         
@@ -53,19 +85,19 @@ class MainUI:
         if 'rag_references' not in st.session_state:
             st.session_state.rag_references = None
         
-        # Store uploaded reference files without processing
+        # 처리하지 않고 업로드된 참고 파일들 저장
         if 'uploaded_reference_files' not in st.session_state:
             st.session_state.uploaded_reference_files = None
     
     def render_main_page(self):
         """
-        Render the main page with all UI components.
+        모든 UI 컴포넌트가 포함된 메인 페이지를 렌더링합니다.
         """
-        # Page header
+        # 페이지 헤더
         st.markdown("## 🎯 채점 시스템 설정")
         st.markdown("---")
         
-        # Grading type selection
+        # 채점 유형 선택
         self.render_grading_type_selection()
         
         # Show additional options based on selected grading type
@@ -411,20 +443,20 @@ class MainUI:
 
 
     def process_uploaded_files(self):
-        """Process uploaded files and prepare data for grading."""
+        """업로드된 파일을 처리하고 채점을 위한 데이터를 준비합니다."""
         try:
             from services.file_service import FileService
             from utils.error_handler import handle_error, ErrorType
-            from ui.error_display_ui import display_file_upload_error, display_error
+            # 삭제된 error_display_ui 대신 기본 Streamlit 오류 표시 사용
             
             file_service = FileService()
             
-            # Process student data based on grading type
+            # 채점 유형에 따라 학생 데이터 처리
             if st.session_state.grading_type == GradingType.DESCRIPTIVE.value:
-                # Process descriptive grading files
+                # 서술형 채점 파일 처리
                 student_file = st.session_state.uploaded_files.get('student_data')
                 if student_file:
-                    # Save uploaded file temporarily
+                    # 업로드된 파일을 임시로 저장
                     import tempfile
                     import os
                     

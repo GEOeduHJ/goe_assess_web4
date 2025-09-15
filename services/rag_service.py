@@ -1,7 +1,7 @@
 """
-RAG (Retrieval-Augmented Generation) Service for Geography Auto-Grading System
+지리 자동 채점 시스템의 RAG (검색 증강 생성) 서비스
 
-Simplified RAG service using LangChain FAISS for document processing and similarity search.
+문서 처리 및 유사성 검색을 위해 LangChain FAISS를 사용하는 간소화된 RAG 서비스입니다.
 """
 
 import os
@@ -20,7 +20,7 @@ from docx import Document
 
 @dataclass
 class RAGResult:
-    """Result from RAG processing."""
+    """RAG 처리 결과"""
     success: bool
     content: List[str] = field(default_factory=list)
     error_message: str = ""
@@ -28,7 +28,7 @@ class RAGResult:
 
 class RAGService:
     """
-    Simplified RAG service using LangChain FAISS for document processing and similarity search.
+    문서 처리 및 유사성 검색을 위해 LangChain FAISS를 사용하는 간소화된 RAG 서비스
     """
     
     _instance = None
@@ -40,7 +40,7 @@ class RAGService:
         return cls._instance
     
     def __init__(self):
-        """Initialize RAG service with HuggingFace embeddings."""
+        """HuggingFace 임베딩으로 RAG 서비스 초기화"""
         if not RAGService._initialized:
             self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
             self.vector_store = None
@@ -49,26 +49,26 @@ class RAGService:
         
     def process_documents(self, uploaded_files: List) -> bool:
         """
-        Process uploaded reference documents and create FAISS vector store.
+        업로드된 참고 문서를 처리하고 FAISS 벡터 저장소 생성
         
         Args:
-            uploaded_files: List of uploaded file objects from Streamlit
+            uploaded_files: Streamlit에서 업로드된 파일 객체 목록
             
         Returns:
-            True if processing successful, False otherwise
+            처리 성공 시 True, 실패 시 False
         """
         try:
             documents = []
             
             for file_obj in uploaded_files:
                 try:
-                    # Extract text content
+                    # 텍스트 내용 추출
                     content = self._extract_document_content(file_obj)
                     if content:
-                        # Create chunks
+                        # 청크 생성
                         chunks = self._chunk_document(content)
                         
-                        # Convert to LangChain Document objects
+                        # LangChain Document 객체로 변환
                         for i, chunk in enumerate(chunks):
                             doc = LangChainDocument(
                                 page_content=chunk,
@@ -77,13 +77,13 @@ class RAGService:
                             documents.append(doc)
                             
                 except Exception:
-                    # Skip problematic files
+                    # 문제가 있는 파일은 건너뛰기
                     continue
             
             if not documents:
                 return False
             
-            # Create FAISS vector store from documents
+            # 문서들로부터 FAISS 벡터 저장소 생성
             self.vector_store = FAISS.from_documents(documents, self.embeddings)
             return True
             
@@ -92,23 +92,23 @@ class RAGService:
     
     def search_relevant_content(self, query: str, k: int = 3) -> List[str]:
         """
-        Search for relevant content based on query.
+        쿼리를 기반으로 관련 내용 검색
         
         Args:
-            query: Query text to search for
-            k: Number of similar chunks to retrieve
+            query: 검색할 쿼리 텍스트
+            k: 검색할 유사 청크 수
             
         Returns:
-            List of relevant text chunks
+            관련 텍스트 청크 목록
         """
         try:
             if not self.vector_store or not query or not query.strip():
                 return []
             
-            # Perform similarity search
+            # 유사성 검색 수행
             docs = self.vector_store.similarity_search(query.strip(), k=k)
             
-            # Extract text content from documents
+            # 문서에서 텍스트 내용 추출
             return [doc.page_content for doc in docs]
             
         except Exception:
@@ -116,23 +116,23 @@ class RAGService:
     
     def process_documents_for_student(self, uploaded_files: List, student_answer: str) -> RAGResult:
         """
-        Process documents and search for content relevant to a specific student answer.
+        문서를 처리하고 특정 학생 답안과 관련된 내용 검색
         
         Args:
-            uploaded_files: List of uploaded file objects
-            student_answer: Student's answer text to search against
+            uploaded_files: 업로드된 파일 객체 목록
+            student_answer: 검색 대상이 될 학생 답안 텍스트
             
         Returns:
-            RAGResult with success status and relevant content
+            성공 상태와 관련 내용이 포함된 RAGResult
         """
         try:
-            # Process documents if not already done
+            # 문서가 아직 처리되지 않았다면 처리
             if not self.vector_store:
                 success = self.process_documents(uploaded_files)
                 if not success:
-                    return RAGResult(success=False, error_message="Failed to process documents")
+                    return RAGResult(success=False, error_message="문서 처리 실패")
             
-            # Search for relevant content using student answer as query
+            # 학생 답안을 쿼리로 사용하여 관련 내용 검색
             relevant_content = self.search_relevant_content(student_answer, k=3)
             
             return RAGResult(
@@ -148,13 +148,13 @@ class RAGService:
     
     def _extract_document_content(self, file_obj) -> Optional[str]:
         """
-        Extract text content from PDF or DOCX file.
+        PDF 또는 DOCX 파일에서 텍스트 내용 추출
         
         Args:
-            file_obj: Uploaded file object
+            file_obj: 업로드된 파일 객체
             
         Returns:
-            Extracted text content or None if extraction fails
+            추출된 텍스트 내용 또는 추출 실패 시 None
         """
         try:
             file_extension = Path(file_obj.name).suffix.lower()
@@ -170,7 +170,7 @@ class RAGService:
             return None
     
     def _extract_pdf_content(self, file_obj) -> str:
-        """Extract text content from PDF file."""
+        """PDF 파일에서 텍스트 내용 추출"""
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
             tmp_file.write(file_obj.read())
             tmp_file_path = tmp_file.name
@@ -189,7 +189,7 @@ class RAGService:
             os.unlink(tmp_file_path)
     
     def _extract_docx_content(self, file_obj) -> str:
-        """Extract text content from DOCX file."""
+        """DOCX 파일에서 텍스트 내용 추출"""
         with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp_file:
             tmp_file.write(file_obj.read())
             tmp_file_path = tmp_file.name
@@ -208,15 +208,15 @@ class RAGService:
     
     def _chunk_document(self, content: str, chunk_size: int = 300, overlap: int = 50) -> List[str]:
         """
-        Split document content into simple overlapping chunks.
+        문서 내용을 간단한 겹침 청크로 분할
         
         Args:
-            content: Document text content
-            chunk_size: Maximum number of characters per chunk (default: 300)
-            overlap: Number of characters to overlap between chunks
+            content: 문서 텍스트 내용
+            chunk_size: 청크당 최대 문자 수 (기본값: 300)
+            overlap: 청크 간 겹칠 문자 수
             
         Returns:
-            List of text chunks
+            텍스트 청크 목록
         """
         if not content or len(content.strip()) == 0:
             return []
@@ -224,7 +224,7 @@ class RAGService:
         content = content.strip()
         chunks = []
         
-        # Simple character-based chunking with overlap
+        # 겹침이 있는 간단한 문자 기반 청킹
         start = 0
         while start < len(content):
             end = start + chunk_size
@@ -240,30 +240,30 @@ class RAGService:
 
 def create_rag_service() -> RAGService:
     """
-    Factory function to create a RAG service instance.
+    RAG 서비스 인스턴스를 생성하는 팩토리 함수
     
     Returns:
-        Configured RAG service instance
+        구성된 RAG 서비스 인스턴스
     """
     return RAGService()
 
 
 def format_retrieved_content(content: List[str]) -> str:
     """
-    Format retrieved RAG content for inclusion in LLM prompts.
+    LLM 프롬프트에 포함할 수 있도록 검색된 RAG 내용을 포맷팅
     
     Args:
-        content: List of retrieved text chunks
+        content: 검색된 텍스트 청크 목록
         
     Returns:
-        Formatted string for prompt inclusion
+        프롬프트 포함용으로 포맷팅된 문자열
     """
     if not content:
         return ""
     
     formatted_chunks = []
     for i, chunk in enumerate(content, 1):
-        # Limit each chunk to 300 characters to prevent prompt bloat
+        # 프롬프트 팽창을 방지하기 위해 각 청크를 300자로 제한
         truncated_chunk = chunk.strip()
         if len(truncated_chunk) > 300:
             truncated_chunk = truncated_chunk[:300] + "..."

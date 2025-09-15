@@ -1,6 +1,6 @@
 """
-Grading execution and progress display UI components.
-Handles real-time progress tracking, student result updates, and grading control.
+채점 실행 및 진행 상황 표시 UI 컴포넌트
+실시간 진행 상황 추적, 학생 결과 업데이트, 채점 제어를 처리합니다.
 """
 
 import streamlit as st
@@ -18,9 +18,64 @@ from services.grading_engine import SequentialGradingEngine, GradingProgress, St
 from services.llm_service import LLMService
 from services.rag_service import RAGService, format_retrieved_content
 from utils.error_handler import handle_error, ErrorType, ErrorInfo
-from ui.error_display_ui import display_error, display_api_error, display_progress_with_error_handling
-# Performance optimization imports removed as part of system monitoring cleanup
+# 삭제된 error_display_ui 대신 기본 Streamlit 오류 표시 사용
 from config import config
+
+
+def display_error(error_info: ErrorInfo, show_details: bool = False):
+    """기본적인 오류 표시 함수 (error_display_ui 대체)"""
+    # ErrorInfo에서 정보 추출
+    if hasattr(error_info, 'error_type'):
+        error_type = error_info.error_type.value
+    else:
+        error_type = "시스템 오류"
+    
+    if hasattr(error_info, 'user_message'):
+        message = error_info.user_message
+    else:
+        message = str(error_info)
+    
+    # 오류 타입에 따라 다른 아이콘과 색상 사용
+    if "API" in error_type or "네트워크" in error_type:
+        st.error(f"🌐 API 통신 오류: {message}")
+    elif "파일" in error_type:
+        st.error(f"📁 파일 처리 오류: {message}")
+    elif "파싱" in error_type:
+        st.error(f"📝 데이터 파싱 오류: {message}")
+    else:
+        st.error(f"⚠️ {error_type}: {message}")
+    
+    # 상세 정보 표시
+    if show_details and hasattr(error_info, 'technical_details'):
+        with st.expander("기술적 세부사항"):
+            st.code(error_info.technical_details)
+
+
+def display_api_error(error_message: str, suggestion: str = None):
+    """API 오류 표시 함수 (error_display_ui 대체)"""
+    st.error(f"🌐 API 오류: {error_message}")
+    if suggestion:
+        st.info(f"💡 해결 방법: {suggestion}")
+
+
+def display_progress_with_error_handling(current: int, total: int, current_item: str = "", recent_errors: List = None):
+    """오류 처리가 포함된 진행률 표시 함수 (error_display_ui 대체)"""
+    # 기본 진행률 표시
+    progress_percentage = current / total if total > 0 else 0
+    
+    if current_item:
+        st.progress(progress_percentage, text=f"진행 중: {current_item} ({current}/{total})")
+    else:
+        st.progress(progress_percentage, text=f"진행률: {current}/{total} ({progress_percentage:.1%})")
+    
+    # 최근 오류가 있으면 표시
+    if recent_errors:
+        with st.expander(f"⚠️ 최근 오류 ({len(recent_errors)}개)", expanded=False):
+            for error in recent_errors[-3:]:  # 최근 3개만 표시
+                if isinstance(error, ErrorInfo):
+                    display_error(error)
+                else:
+                    st.error(str(error))
 
 
 @dataclass
