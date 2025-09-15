@@ -44,6 +44,35 @@ class ExportService:
             if not isinstance(result, GradingResult):
                 raise ValueError(f"결과 {i+1}번이 올바른 GradingResult 형식이 아닙니다.")
             
+            # Check for required attributes
+            try:
+                # Test access to all required attributes
+                _ = result.student_name
+                _ = result.student_class_number
+                _ = result.total_score
+                _ = result.total_max_score
+                _ = result.percentage
+                _ = result.grade_letter
+                _ = result.grading_time_seconds
+                _ = result.graded_at
+                _ = result.overall_feedback
+                _ = result.original_answer
+                _ = result.element_scores
+                
+                # Validate element scores
+                for j, element in enumerate(result.element_scores):
+                    if not hasattr(element, 'element_name'):
+                        raise AttributeError(f"Element {j+1} missing 'element_name'")
+                    if not hasattr(element, 'score'):
+                        raise AttributeError(f"Element {j+1} missing 'score'")
+                    if not hasattr(element, 'max_score'):
+                        raise AttributeError(f"Element {j+1} missing 'max_score'")
+                    if not hasattr(element, 'percentage'):
+                        raise AttributeError(f"Element {j+1} missing 'percentage'")
+                        
+            except AttributeError as e:
+                raise ValueError(f"결과 {i+1}번에서 필수 속성이 누락되었습니다: {e}")
+            
             if not result.student_name.strip():
                 raise ValueError(f"결과 {i+1}번의 학생명이 비어있습니다.")
         
@@ -109,24 +138,25 @@ class ExportService:
             for result in results:
                 # Safely handle potentially missing data
                 row = {
-                    '학생명': result.student_name or '',
-                    '반': result.student_class_number or '',
-                    '원본답안': result.original_answer or '[답안 없음]',
-                    '총점': result.total_score,
-                    '만점': result.total_max_score,
-                    '백분율': round(result.percentage, 1),
-                    '등급': result.grade_letter,
-                    '채점시간(초)': round(result.grading_time_seconds, 1),
-                    '채점완료시각': result.graded_at.strftime('%Y-%m-%d %H:%M:%S') if result.graded_at else '',
-                    '전체피드백': result.overall_feedback or '[피드백 없음]'
+                    '학생명': getattr(result, 'student_name', '') or '',
+                    '반': getattr(result, 'student_class_number', '') or '',
+                    '원본답안': getattr(result, 'original_answer', '') or '[답안 없음]',
+                    '총점': getattr(result, 'total_score', 0),
+                    '만점': getattr(result, 'total_max_score', 0),
+                    '백분율': round(getattr(result, 'percentage', 0), 1),
+                    '등급': getattr(result, 'grade_letter', 'N/A'),
+                    '채점시간(초)': round(getattr(result, 'grading_time_seconds', 0), 1),
+                    '채점완료시각': result.graded_at.strftime('%Y-%m-%d %H:%M:%S') if getattr(result, 'graded_at', None) else '',
+                    '전체피드백': getattr(result, 'overall_feedback', '') or '[피드백 없음]'
                 }
                 
                 # Add element scores as separate columns
-                for element in result.element_scores:
-                    element_name = element.element_name or '알수없음'
-                    row[f'{element_name}_점수'] = element.score
-                    row[f'{element_name}_만점'] = element.max_score
-                    row[f'{element_name}_백분율'] = round(element.percentage, 1)
+                element_scores = getattr(result, 'element_scores', [])
+                for element in element_scores:
+                    element_name = getattr(element, 'element_name', '알수없음') or '알수없음'
+                    row[f'{element_name}_점수'] = getattr(element, 'score', 0)
+                    row[f'{element_name}_만점'] = getattr(element, 'max_score', 0)
+                    row[f'{element_name}_백분율'] = round(getattr(element, 'percentage', 0), 1)
                     row[f'{element_name}_판단근거'] = getattr(element, 'reasoning', '') or '[판단근거 없음]'
                     row[f'{element_name}_피드백'] = getattr(element, 'feedback', '') or '[피드백 없음]'
                 
@@ -160,18 +190,19 @@ class ExportService:
             element_data = []
             
             for result in results:
-                for element in result.element_scores:
+                element_scores = getattr(result, 'element_scores', [])
+                for element in element_scores:
                     row = {
-                        '학생명': result.student_name or '',
-                        '반': result.student_class_number or '',
-                        '원본답안': result.original_answer or '[답안 없음]',
-                        '평가요소': element.element_name or '',
-                        '획득점수': element.score,
-                        '만점': element.max_score,
-                        '백분율': round(element.percentage, 1),
+                        '학생명': getattr(result, 'student_name', '') or '',
+                        '반': getattr(result, 'student_class_number', '') or '',
+                        '원본답안': getattr(result, 'original_answer', '') or '[답안 없음]',
+                        '평가요소': getattr(element, 'element_name', '') or '',
+                        '획득점수': getattr(element, 'score', 0),
+                        '만점': getattr(element, 'max_score', 0),
+                        '백분율': round(getattr(element, 'percentage', 0), 1),
                         '판단근거': getattr(element, 'reasoning', '') or '[판단근거 없음]',
                         '요소별피드백': getattr(element, 'feedback', '') or '[피드백 없음]',
-                        '채점시간(초)': round(result.grading_time_seconds, 1)
+                        '채점시간(초)': round(getattr(result, 'grading_time_seconds', 0), 1)
                     }
                     element_data.append(row)
             
@@ -203,16 +234,19 @@ class ExportService:
         
         # Overall statistics
         total_students = len(results)
-        avg_score = statistics.mean([r.percentage for r in results])
-        median_score = statistics.median([r.percentage for r in results])
-        std_score = statistics.stdev([r.percentage for r in results]) if len(results) > 1 else 0
-        avg_time = statistics.mean([r.grading_time_seconds for r in results])
-        total_time = sum([r.grading_time_seconds for r in results])
+        percentages = [getattr(r, 'percentage', 0) for r in results]
+        grading_times = [getattr(r, 'grading_time_seconds', 0) for r in results]
+        
+        avg_score = statistics.mean(percentages) if percentages else 0
+        median_score = statistics.median(percentages) if percentages else 0
+        std_score = statistics.stdev(percentages) if len(percentages) > 1 else 0
+        avg_time = statistics.mean(grading_times) if grading_times else 0
+        total_time = sum(grading_times)
         
         # Grade distribution
         grade_counts = {}
         for result in results:
-            grade = result.grade_letter
+            grade = getattr(result, 'grade_letter', 'N/A')
             grade_counts[grade] = grade_counts.get(grade, 0) + 1
         
         # Create summary data
@@ -269,30 +303,33 @@ class ExportService:
             
             for result in results:
                 # Overall feedback
-                if result.overall_feedback and result.overall_feedback.strip():
+                overall_feedback = getattr(result, 'overall_feedback', '')
+                if overall_feedback and overall_feedback.strip():
                     feedback_data.append({
-                        '학생명': result.student_name or '',
-                        '반': result.student_class_number or '',
-                        '원본답안': result.original_answer or '[답안 없음]',
+                        '학생명': getattr(result, 'student_name', '') or '',
+                        '반': getattr(result, 'student_class_number', '') or '',
+                        '원본답안': getattr(result, 'original_answer', '') or '[답안 없음]',
                         '피드백유형': '전체피드백',
                         '평가요소': '전체',
-                        '피드백내용': result.overall_feedback,
-                        '점수': f'{result.total_score}/{result.total_max_score}',
-                        '백분율': round(result.percentage, 1)
+                        '피드백내용': overall_feedback,
+                        '점수': f'{getattr(result, "total_score", 0)}/{getattr(result, "total_max_score", 0)}',
+                        '백분율': round(getattr(result, 'percentage', 0), 1)
                     })
                 
                 # Element-specific feedback
-                for element in result.element_scores:
-                    if element.feedback and element.feedback.strip():
+                element_scores = getattr(result, 'element_scores', [])
+                for element in element_scores:
+                    element_feedback = getattr(element, 'feedback', '')
+                    if element_feedback and element_feedback.strip():
                         feedback_data.append({
-                            '학생명': result.student_name or '',
-                            '반': result.student_class_number or '',
-                            '원본답안': result.original_answer or '[답안 없음]',
+                            '학생명': getattr(result, 'student_name', '') or '',
+                            '반': getattr(result, 'student_class_number', '') or '',
+                            '원본답안': getattr(result, 'original_answer', '') or '[답안 없음]',
                             '피드백유형': '요소별피드백',
-                            '평가요소': element.element_name or '',
-                            '피드백내용': element.feedback,
-                            '점수': f'{element.score}/{element.max_score}',
-                            '백분율': round(element.percentage, 1)
+                            '평가요소': getattr(element, 'element_name', '') or '',
+                            '피드백내용': element_feedback,
+                            '점수': f'{getattr(element, "score", 0)}/{getattr(element, "max_score", 0)}',
+                            '백분율': round(getattr(element, 'percentage', 0), 1)
                         })
             
             if feedback_data:

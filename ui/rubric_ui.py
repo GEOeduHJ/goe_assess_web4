@@ -156,6 +156,8 @@ class RubricUI:
                 type="secondary"
             ):
                 st.session_state.rubric.elements.pop(element_index)
+                # Update rubric total score after deleting element
+                st.session_state.rubric.update_total_score()
                 st.rerun()
         
         # Criteria editor
@@ -171,7 +173,9 @@ class RubricUI:
             key=f"add_criteria_{element_index}",
             help="새로운 채점 기준을 추가합니다"
         ):
-            element.add_criteria(score=0, description="")
+            element.add_criteria(score=0, description="기준을 입력하세요")
+            # Update rubric total score after adding new criteria
+            st.session_state.rubric.update_total_score()
             st.rerun()
     
     def render_criteria_editor(self, element_index: int, criteria_index: int, criteria: EvaluationCriteria):
@@ -189,6 +193,9 @@ class RubricUI:
             )
             if new_score != criteria.score:
                 criteria.score = new_score
+                # Update element max score and rubric total score
+                st.session_state.rubric.elements[element_index]._calculate_max_score()
+                st.session_state.rubric.update_total_score()
         
         with col2:
             new_description = st.text_area(
@@ -208,6 +215,9 @@ class RubricUI:
                 help="이 채점 기준을 삭제합니다"
             ):
                 st.session_state.rubric.elements[element_index].criteria.pop(criteria_index)
+                # Update element max score and rubric total score after deletion
+                st.session_state.rubric.elements[element_index]._calculate_max_score()
+                st.session_state.rubric.update_total_score()
                 st.rerun()
     
     def render_add_element_section(self):
@@ -238,6 +248,8 @@ class RubricUI:
                     # Add default criteria
                     new_element.add_criteria(score=0, description="기준을 입력하세요")
                     st.session_state.rubric.add_element(new_element)
+                    # Update total score after adding element with criteria
+                    st.session_state.rubric.update_total_score()
                     st.success(f"✅ '{new_element_name}' 평가 요소가 추가되었습니다!")
                     st.rerun()
             elif submitted and not new_element_name.strip():

@@ -34,6 +34,19 @@ class EvaluationElement:
         criteria = EvaluationCriteria(score=score, description=description)
         self.criteria.append(criteria)
         self._calculate_max_score()
+    
+    def update_criteria(self, index: int, score: int, description: str):
+        """Update existing criteria and recalculate max score."""
+        if 0 <= index < len(self.criteria):
+            self.criteria[index].score = score
+            self.criteria[index].description = description
+            self._calculate_max_score()
+    
+    def remove_criteria(self, index: int):
+        """Remove criteria and recalculate max score."""
+        if 0 <= index < len(self.criteria):
+            self.criteria.pop(index)
+            self._calculate_max_score()
 
 
 @dataclass
@@ -53,6 +66,16 @@ class Rubric:
     def add_element(self, element: EvaluationElement):
         self.elements.append(element)
         self._calculate_total_max_score()
+    
+    def update_total_score(self):
+        """Manually update total max score when elements are modified."""
+        self._calculate_total_max_score()
+    
+    def remove_element(self, index: int):
+        """Remove element and recalculate total max score."""
+        if 0 <= index < len(self.elements):
+            self.elements.pop(index)
+            self._calculate_total_max_score()
     
     def to_dict(self) -> Dict:
         """Convert rubric to dictionary format."""

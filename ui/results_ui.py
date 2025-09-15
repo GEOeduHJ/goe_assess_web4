@@ -144,7 +144,7 @@ class ResultsUI:
                 )
                 fig.update_traces(textposition='inside', textinfo='percent+label')
                 fig.update_layout(height=300)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="grade_distribution_pie")
             
             with col2:
                 st.markdown("**등급별 학생 수:**")
@@ -446,7 +446,7 @@ class ResultsUI:
                             }
                         ))
                         fig.update_layout(height=200)
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True, key=f"element_gauge_{result.student_name}_{result.student_class_number}_{i}")
                     
                     with col2:
                         st.markdown("**점수 정보:**")
@@ -507,7 +507,7 @@ class ResultsUI:
             yaxis_title="점수"
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key="element_scores_chart")
     
     def render_student_performance_insights(self, result: GradingResult):
         """Render performance insights and recommendations for the student."""
@@ -577,7 +577,7 @@ class ResultsUI:
             )
             fig.add_vline(x=statistics.mean(percentages), line_dash="dash", line_color="red", 
                          annotation_text=f"평균: {statistics.mean(percentages):.1f}%")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="score_histogram")
         
         with col2:
             # Box plot of total scores
@@ -586,7 +586,7 @@ class ResultsUI:
                 title="총점 분포 (박스 플롯)",
                 labels={'y': '총점'}
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="score_boxplot")
     
     def render_element_performance_analysis(self, results: List[GradingResult]):
         """Render element performance analysis across all students."""
@@ -627,7 +627,7 @@ class ResultsUI:
             labels={'x': '평가 요소', 'y': '평균 백분율 (%)'}
         )
         fig.add_hline(y=80, line_dash="dash", line_color="green", annotation_text="목표 수준 (80%)")
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key="element_performance_bar")
         
         # Statistics table
         st.markdown("**평가 요소별 상세 통계:**")
@@ -657,7 +657,7 @@ class ResultsUI:
             avg_time = statistics.mean(grading_times)
             fig.add_vline(x=avg_time, line_dash="dash", line_color="red",
                          annotation_text=f"평균: {avg_time:.1f}초")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="grading_time_histogram")
         
         with col2:
             # Time vs Score correlation
@@ -668,7 +668,7 @@ class ResultsUI:
                 title="채점 시간 vs 점수 상관관계",
                 labels={'x': '채점 시간 (초)', 'y': '백분율 점수 (%)'}
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="time_vs_score_scatter")
         
         # Time statistics
         st.markdown("**채점 시간 통계:**")
@@ -723,7 +723,7 @@ class ResultsUI:
             aspect='auto'
         )
         fig.update_layout(height=500)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key="correlation_heatmap")
         
         # Highlight strong correlations
         st.markdown("**주요 상관관계:**")
