@@ -13,9 +13,6 @@ flowchart TD
         RUBRIC[rubric_ui.py<br/>루브릭 설정]
         EXEC[grading_execution_ui.py<br/>채점 실행]
         RESULT[results_ui.py<br/>결과 표시]
-        PROGRESS[enhanced_progress_display.py<br/>진행률 표시]
-        ERROR[error_display_ui.py<br/>오류 표시]
-        STATUS[status_display_ui.py<br/>상태 표시]
     end
     
     %% Application Entry Point
@@ -31,7 +28,6 @@ flowchart TD
         GRADING[grading_engine.py<br/>채점 엔진]
         FILE[file_service.py<br/>파일 처리]
         EXPORT[export_service.py<br/>결과 내보내기]
-        MSG[status_message_manager.py<br/>상태 메시지]
     end
     
     %% Data Models Layer
@@ -39,8 +35,6 @@ flowchart TD
         STUDENT[student_model.py<br/>학생 정보]
         RUBRICM[rubric_model.py<br/>루브릭 모델]
         RESULTM[result_model.py<br/>채점 결과]
-        PROGRESS_M[enhanced_progress_model.py<br/>진행률 모델]
-        STATUS_M[status_message_model.py<br/>상태 메시지]
     end
     
     %% Utilities Layer
@@ -70,9 +64,6 @@ flowchart TD
     RUBRIC --> APP
     EXEC --> APP
     RESULT --> APP
-    PROGRESS --> APP
-    ERROR --> APP
-    STATUS --> APP
     
     APP --> CONFIG
     APP --> LLM
@@ -80,7 +71,6 @@ flowchart TD
     APP --> GRADING
     APP --> FILE
     APP --> EXPORT
-    APP --> MSG
     
     LLM --> PROMPT
     LLM --> GEMINI
@@ -93,8 +83,6 @@ flowchart TD
     GRADING --> STUDENT
     GRADING --> RUBRICM
     GRADING --> RESULTM
-    GRADING --> PROGRESS_M
-    GRADING --> STATUS_M
     
     FILE --> TEMP
     EXPORT --> EXCEL
@@ -111,10 +99,10 @@ flowchart TD
     classDef external fill:#e0f2f1,stroke:#00695c,stroke-width:2px
     classDef storage fill:#f1f8e9,stroke:#558b2f,stroke-width:2px
     
-    class UI,MAIN,RUBRIC,EXEC,RESULT,PROGRESS,ERROR,STATUS frontend
+    class UI,MAIN,RUBRIC,EXEC,RESULT frontend
     class APP,CONFIG app
-    class LLM,RAG,GRADING,FILE,EXPORT,MSG service
-    class STUDENT,RUBRICM,RESULTM,PROGRESS_M,STATUS_M model
+    class LLM,RAG,GRADING,FILE,EXPORT service
+    class STUDENT,RUBRICM,RESULTM model
     class PROMPT,EMBED,ERR util
     class GEMINI,GROQ,HF external
     class FAISS,TEMP,EXCEL storage

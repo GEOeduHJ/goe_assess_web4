@@ -175,7 +175,7 @@ class MainUI:
                 "icon": "🔥"
             },
             LLMModel.GROQ.value: {
-                "name": "Groq Qwen3",
+                "name": "Groq",
                 "description": "빠른 추론 속도를 제공하는 텍스트 전용 AI 모델입니다.",
                 "icon": "⚡"
             }
@@ -212,7 +212,14 @@ class MainUI:
                 )
                 
                 st.session_state.selected_groq_model = selected_groq_model
-                st.info(f"선택된 Groq 모델: {groq_model_options[selected_groq_model]}")
+                
+                # 선택 확인 표시
+                st.success(f"✅ 선택된 Groq 모델: **{groq_model_options[selected_groq_model]}**")
+                
+                # API 호출에 사용될 모델명 표시
+                with st.expander("🔧 기술 정보"):
+                    st.code(f"API 호출 모델명: {selected_groq_model}")
+                    st.info("이 모델명이 실제 Groq API 호출에 사용됩니다.")
     
     def render_file_upload_section(self):
         """
@@ -413,7 +420,7 @@ class MainUI:
         # Model selection status (for descriptive only)
         if st.session_state.grading_type == GradingType.DESCRIPTIVE.value:
             if st.session_state.selected_model:
-                model_name = "Google Gemini 2.5 Flash" if st.session_state.selected_model == LLMModel.GEMINI.value else "Groq Qwen3"
+                model_name = "Google Gemini 2.5 Flash" if st.session_state.selected_model == LLMModel.GEMINI.value else "Groq"
                 st.success(f"✅ LLM 모델: {model_name}")
             else:
                 st.error("❌ LLM 모델을 선택해주세요")

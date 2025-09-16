@@ -150,6 +150,9 @@ def render_grading_page():
     grading_type = st.session_state.get('grading_type', 'descriptive')
     references = st.session_state.get('rag_references')
     
+    # Groq 모델 선택값 가져오기
+    groq_model = st.session_state.get('selected_groq_model', 'qwen/qwen3-32b')
+    
     # 채점 실행 UI 렌더링
     grading_ui = create_grading_execution_ui()
     grading_ui.render_grading_execution_page(
@@ -157,7 +160,8 @@ def render_grading_page():
         rubric=rubric,
         model_type=model_type,
         grading_type=grading_type,
-        references=references
+        references=references,
+        groq_model=groq_model
     )
 
 

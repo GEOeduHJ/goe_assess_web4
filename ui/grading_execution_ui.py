@@ -86,6 +86,7 @@ class GradingSession:
     model_type: str
     grading_type: str
     references: Optional[List[str]] = None
+    groq_model: str = "qwen/qwen3-32b"  # 추가된 필드
     start_time: Optional[datetime] = None
     is_active: bool = False
     is_paused: bool = False
@@ -142,7 +143,8 @@ class GradingExecutionUI:
         rubric: Rubric,
         model_type: str,
         grading_type: str,
-        references: Optional[List[str]] = None
+        references: Optional[List[str]] = None,
+        groq_model: str = "qwen/qwen3-32b"
     ):
         """
         Render the main grading execution page.
@@ -153,6 +155,7 @@ class GradingExecutionUI:
             model_type: Selected LLM model
             grading_type: Type of grading (descriptive/map)
             references: Reference materials from RAG
+            groq_model: Selected Groq model (if applicable)
         """
         st.markdown("## 🚀 채점 실행")
         st.markdown("---")
@@ -165,9 +168,11 @@ class GradingExecutionUI:
                 model_type=model_type,
                 grading_type=grading_type,
                 references=references,
+                groq_model=groq_model,
                 uploaded_files=st.session_state.get('uploaded_reference_files', None)  # Pass uploaded files
             )
             print(f"DEBUG: Created new grading session with {len(students) if students else 0} students")
+            print(f"DEBUG: Using Groq model: {groq_model}")
         else:
             # Update existing session with new data
             st.session_state.grading_session.students = students
@@ -175,9 +180,11 @@ class GradingExecutionUI:
             st.session_state.grading_session.model_type = model_type
             st.session_state.grading_type = grading_type
             st.session_state.grading_session.references = references
+            st.session_state.grading_session.groq_model = groq_model
             if st.session_state.get('uploaded_reference_files'):
                 st.session_state.grading_session.uploaded_files = st.session_state.uploaded_reference_files
             print(f"DEBUG: Updated grading session with {len(students) if students else 0} students")
+            print(f"DEBUG: Using Groq model: {groq_model}")
         
         # Render grading overview
         self.render_grading_overview()
@@ -249,7 +256,7 @@ class GradingExecutionUI:
             st.metric("채점 유형", grading_type_name)
         
         with col3:
-            model_name = "Gemini 2.5 Flash" if session.model_type == "gemini" else "Groq Qwen3"
+            model_name = "Gemini 2.5 Flash" if session.model_type == "gemini" else "Groq"
             st.metric("AI 모델", model_name)
         
         with col4:
@@ -733,8 +740,8 @@ class GradingExecutionUI:
     def run_grading_thread(self, session: GradingSession):
         """Run grading in background thread with comprehensive error handling."""
         try:
-            # Get the selected Groq model from session state
-            groq_model_name = getattr(st.session_state, 'selected_groq_model', 'qwen/qwen3-32b')
+            # Get the selected Groq model from session
+            groq_model_name = session.groq_model
             
             if self.grading_engine:
                 results = self.grading_engine.grade_students_sequential(

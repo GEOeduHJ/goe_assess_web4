@@ -407,8 +407,8 @@ class LLMService:
             
             # Generate response
             try:
-                # Use google-generativeai GenerativeModel
-                model = genai.GenerativeModel('gemini-1.5-flash')
+                # Use google-generativeai GenerativeModel with latest model
+                model = genai.GenerativeModel('gemini-2.5-flash')
                 response = model.generate_content(content)
                 
                 if response.text:
@@ -468,10 +468,22 @@ class LLMService:
             context="call_gemini_api"
         )
     
+    def get_selected_groq_model(self) -> str:
+        """세션 상태에서 선택된 Groq 모델을 가져옵니다."""
+        try:
+            import streamlit as st
+            if hasattr(st, 'session_state') and 'selected_groq_model' in st.session_state:
+                return st.session_state.selected_groq_model
+        except:
+            pass
+        
+        # 기본값 반환
+        return "qwen/qwen3-32b"
+
     def call_groq_api(
         self, 
         prompt: str, 
-        model_name: str = "qwen/qwen3-32b",
+        model_name: Optional[str] = None,
         max_retries: Optional[int] = None
     ) -> Dict[str, Any]:
         """
@@ -479,7 +491,7 @@ class LLMService:
         
         Args:
             prompt: Text prompt for the model
-            model_name: Name of the Groq model to use (default: qwen/qwen3-32b)
+            model_name: Name of the Groq model to use (None = auto-select from session)
             max_retries: Maximum number of retry attempts
             
         Returns:
@@ -488,6 +500,12 @@ class LLMService:
         Raises:
             Exception: If API call fails after retries
         """
+        # 모델명이 지정되지 않으면 세션에서 가져오기
+        if model_name is None:
+            model_name = self.get_selected_groq_model()
+        
+        print(f"DEBUG: Using Groq model: {model_name}")
+        
         if not self.groq_client:
             error_info = handle_error(
                 ValueError("Groq client not initialized"),
@@ -506,6 +524,16 @@ class LLMService:
         
         def _make_api_call():
             try:
+                # 모델별 max_tokens 설정
+                if "gpt-oss" in model_name:
+                    max_tokens = 65536  # GPT-OSS 120B 모델의 최대값
+                elif "qwen" in model_name:
+                    max_tokens = 40960  # Qwen3 32B 모델은 더 높은 값 지원
+                else:
+                    max_tokens = 65536  # 안전한 기본값
+                
+                print(f"DEBUG: Using max_tokens={max_tokens} for model {model_name}")
+                
                 # Call Groq API
                 response = self.groq_client.chat.completions.create(
                     model=model_name,  # Use specified Groq model
@@ -513,7 +541,7 @@ class LLMService:
                         {"role": "user", "content": prompt}
                     ],
                     temperature=0.1,  # Low temperature for consistent grading
-                    max_tokens=2048
+                    max_tokens=max_tokens
                 )
                 
                 if response.choices and response.choices[0].message.content:

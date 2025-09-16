@@ -43,20 +43,20 @@ class Config:
     
     # 애플리케이션 설정
     APP_TITLE: str = get_config_value("APP_TITLE", "지리과 자동 채점 플랫폼")
-    MAX_FILE_SIZE_MB: int = int(get_config_value("MAX_FILE_SIZE_MB", "50"))
+    MAX_FILE_SIZE_MB: int = int(get_config_value("MAX_FILE_SIZE_MB", "100"))
     EMBEDDING_MODEL: str = get_config_value("EMBEDDING_MODEL", "nlpai-lab/KURE-v1")
     FAISS_INDEX_TYPE: str = get_config_value("FAISS_INDEX_TYPE", "IndexFlatIP")
     
     # 처리 설정
     MAX_RETRIES: int = int(get_config_value("MAX_RETRIES", "3"))
     RETRY_DELAY: int = int(get_config_value("RETRY_DELAY", "2"))
-    CHUNK_SIZE: int = int(get_config_value("CHUNK_SIZE", "500"))
+    CHUNK_SIZE: int = int(get_config_value("CHUNK_SIZE", "300"))
     CHUNK_OVERLAP: int = int(get_config_value("CHUNK_OVERLAP", "50"))
     TOP_K_RETRIEVAL: int = int(get_config_value("TOP_K_RETRIEVAL", "3"))
     
     # RAG 최적화 설정
     MAX_DOCS_PER_STUDENT: int = int(os.getenv("MAX_DOCS_PER_STUDENT", "5"))
-    CHUNKS_PER_DOC_LIMIT: int = int(os.getenv("CHUNKS_PER_DOC_LIMIT", "20"))
+    CHUNKS_PER_DOC_LIMIT: int = int(os.getenv("CHUNKS_PER_DOC_LIMIT", "300"))
     RAG_PROCESSING_TIMEOUT: int = int(os.getenv("RAG_PROCESSING_TIMEOUT", "60"))
     EMBEDDING_BATCH_SIZE: int = int(os.getenv("EMBEDDING_BATCH_SIZE", "8"))
     ENABLE_INCREMENTAL_CLEANUP: bool = os.getenv("ENABLE_INCREMENTAL_CLEANUP", "true").lower() == "true"

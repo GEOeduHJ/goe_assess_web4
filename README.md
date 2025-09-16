@@ -80,25 +80,19 @@ geo_assess_web4/
 │   ├── main_ui.py         # 메인 인터페이스 및 내비게이션
 │   ├── rubric_ui.py       # 루브릭 설정 UI
 │   ├── grading_execution_ui.py  # 채점 실행 및 진행률 UI
-│   ├── results_ui.py      # 결과 표시 및 시각화 UI
-│   ├── enhanced_progress_display.py  # 향상된 진행률 표시
-│   ├── error_display_ui.py # 오류 표시 및 처리 UI
-│   └── status_display_ui.py # 상태 메시지 표시 UI
+│   └── results_ui.py      # 결과 표시 및 시각화 UI
 │
 ├── services/              # 비즈니스 로직 서비스
 │   ├── llm_service.py     # LLM API 통합 (Gemini, Groq)
 │   ├── rag_service.py     # RAG 문서 처리 및 검색
 │   ├── grading_engine.py  # 순차 채점 엔진
 │   ├── file_service.py    # 파일 업로드 및 처리
-│   ├── export_service.py  # Excel 결과 내보내기
-│   └── status_message_manager.py # 상태 메시지 관리
+│   └── export_service.py  # Excel 결과 내보내기
 │
 ├── models/                # 데이터 모델
 │   ├── student_model.py   # 학생 정보 모델
 │   ├── rubric_model.py    # 루브릭 및 평가 기준 모델
-│   ├── result_model.py    # 채점 결과 모델
-│   ├── enhanced_progress_model.py # 진행률 추적 모델
-│   └── status_message_model.py # 상태 메시지 모델
+│   └── result_model.py    # 채점 결과 모델
 │
 ├── utils/                 # 유틸리티 함수
 │   ├── prompt_utils.py    # 프롬프트 생성 및 응답 파싱
