@@ -60,8 +60,6 @@ class ResultsUI:
             self.render_overview_dashboard(results)
         elif st.session_state.results_view_mode == "individual":
             self.render_individual_results(results)
-        elif st.session_state.results_view_mode == "analytics":
-            self.render_analytics_dashboard(results)
         
         # 내보내기 옵션
         self.render_export_options(results)
@@ -69,6 +67,13 @@ class ResultsUI:
     def render_results_overview(self, results: List[GradingResult]):
         """주요 지표가 포함된 상위 수준 결과 개요를 렌더링합니다."""
         st.markdown("### 📈 전체 개요")
+        
+        # 상대등급 계산 및 설정
+        grade_mapping = GradingResult.calculate_relative_grades(results)
+        for result in results:
+            key = f"{result.student_name}_{result.student_class_number}"
+            if key in grade_mapping:
+                result.set_relative_grade(grade_mapping[key])
         
         # 요약 통계 계산
         total_students = len(results)
@@ -79,7 +84,7 @@ class ResultsUI:
         # 등급 분포
         grade_counts = {}
         for result in results:
-            grade = result.grade_letter
+            grade = result.get_relative_grade()
             grade_counts[grade] = grade_counts.get(grade, 0) + 1
         
         # 컬럼에 지표 표시
@@ -133,13 +138,14 @@ class ResultsUI:
                 fig = px.pie(
                     values=list(grade_counts.values()),
                     names=list(grade_counts.keys()),
-                    title="등급 분포",
+                    title="등급 분포 (한국 내신 5등급제)",
                     color_discrete_map={
-                        'A': '#28a745',
-                        'B': '#17a2b8', 
-                        'C': '#ffc107',
-                        'D': '#fd7e14',
-                        'F': '#dc3545'
+                        '1': '#28a745',  # 1등급: 녹색
+                        '2': '#17a2b8',  # 2등급: 청색
+                        '3': '#ffc107',  # 3등급: 황색
+                        '4': '#fd7e14',  # 4등급: 주황색
+                        '5': '#dc3545',  # 5등급: 적색
+                        '미정': '#6c757d'  # 미정: 회색
                     }
                 )
                 fig.update_traces(textposition='inside', textinfo='percent+label')
@@ -148,11 +154,19 @@ class ResultsUI:
             
             with col2:
                 st.markdown("**등급별 학생 수:**")
-                for grade in ['A', 'B', 'C', 'D', 'F']:
+                grade_descriptions = {
+                    '1': '1등급 (상위 10%)',
+                    '2': '2등급 (상위 34%)', 
+                    '3': '3등급 (상위 66%)',
+                    '4': '4등급 (상위 87%)',
+                    '5': '5등급 (상위 100%)'
+                }
+                for grade in ['1', '2', '3', '4', '5']:
                     count = grade_counts.get(grade, 0)
                     if count > 0:
                         percentage = (count / total_students) * 100
-                        st.write(f"**{grade}등급**: {count}명 ({percentage:.1f}%)")
+                        grade_desc = grade_descriptions.get(grade, f"{grade}등급")
+                        st.write(f"**{grade_desc}**: {count}명 ({percentage:.1f}%)")
     
     def render_view_mode_selector(self):
         """Render view mode selection tabs."""
@@ -160,8 +174,7 @@ class ResultsUI:
         
         view_modes = {
             "overview": "📊 전체 보기",
-            "individual": "👤 개별 결과",
-            "analytics": "📈 분석 대시보드"
+            "individual": "👤 개별 결과"
         }
         
         selected_mode = st.radio(
@@ -208,7 +221,7 @@ class ResultsUI:
         with col3:
             grade_filter = st.selectbox(
                 "등급 필터:",
-                options=["all", "A", "B", "C", "D", "F"],
+                options=["all", "1", "2", "3", "4", "5"],
                 format_func=lambda x: "전체" if x == "all" else f"{x}등급",
                 key="grade_filter"
             )
@@ -239,21 +252,7 @@ class ResultsUI:
             # Render detailed student result
             self.render_detailed_student_result(selected_result)
     
-    def render_analytics_dashboard(self, results: List[GradingResult]):
-        """Render analytics dashboard with charts and insights."""
-        st.markdown("### 📈 분석 대시보드")
-        
-        # Score distribution analysis
-        self.render_score_distribution_analysis(results)
-        
-        # Element performance analysis
-        self.render_element_performance_analysis(results)
-        
-        # Time analysis
-        self.render_time_analysis(results)
-        
-        # Correlation analysis
-        self.render_correlation_analysis(results)
+
     
     def render_student_result_cards(self, results: List[GradingResult]):
         """Render student result cards in a grid layout."""
@@ -275,14 +274,15 @@ class ResultsUI:
         """
         # Determine card color based on grade
         grade_colors = {
-            'A': '#d4edda',  # Light green
-            'B': '#d1ecf1',  # Light blue
-            'C': '#fff3cd',  # Light yellow
-            'D': '#f8d7da',  # Light red
-            'F': '#f5c6cb'   # Red
+            '1': '#d4edda',  # Light green (1등급)
+            '2': '#d1ecf1',  # Light blue (2등급)
+            '3': '#fff3cd',  # Light yellow (3등급)
+            '4': '#ffeaa7',  # Light orange (4등급)
+            '5': '#f8d7da',  # Light red (5등급)
+            '미정': '#f8f9fa'  # Light gray (미정)
         }
         
-        card_color = grade_colors.get(result.grade_letter, '#f8f9fa')
+        card_color = grade_colors.get(result.get_relative_grade(), '#f8f9fa')
         
         # Create card container
         with st.container():
@@ -313,9 +313,12 @@ class ResultsUI:
                 )
             
             with col2:
+                grade_display = result.get_relative_grade()
+                if grade_display != '미정':
+                    grade_display += "등급"
                 st.metric(
                     "등급",
-                    result.grade_letter,
+                    grade_display,
                     delta=f"{result.grading_time_seconds:.1f}초"
                 )
             
@@ -384,7 +387,10 @@ class ResultsUI:
             st.metric("총점", f"{result.total_score}/{result.total_max_score}")
         
         with col3:
-            st.metric("등급", result.grade_letter)
+            grade_display = result.get_relative_grade()
+            if grade_display != '미정':
+                grade_display += "등급"
+            st.metric("등급", grade_display)
         
         # Performance summary
         st.markdown("### 📊 성과 요약")
@@ -556,193 +562,27 @@ class ResultsUI:
             st.warning("🥉 **보통**: 기본 수준은 달성했으나 전반적인 개선이 필요합니다.")
         else:
             st.error("📚 **개선 필요**: 전반적인 학습과 복습이 필요합니다.")
-    
-    def render_score_distribution_analysis(self, results: List[GradingResult]):
-        """Render score distribution analysis charts."""
-        st.markdown("#### 📊 점수 분포 분석")
         
-        # Prepare data
-        percentages = [r.percentage for r in results]
-        total_scores = [r.total_score for r in results]
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Histogram of percentage scores
-            fig = px.histogram(
-                x=percentages,
-                nbins=20,
-                title="백분율 점수 분포",
-                labels={'x': '백분율 점수 (%)', 'y': '학생 수'}
-            )
-            fig.add_vline(x=statistics.mean(percentages), line_dash="dash", line_color="red", 
-                         annotation_text=f"평균: {statistics.mean(percentages):.1f}%")
-            st.plotly_chart(fig, use_container_width=True, key="score_histogram")
-        
-        with col2:
-            # Box plot of total scores
-            fig = px.box(
-                y=total_scores,
-                title="총점 분포 (박스 플롯)",
-                labels={'y': '총점'}
-            )
-            st.plotly_chart(fig, use_container_width=True, key="score_boxplot")
-    
-    def render_element_performance_analysis(self, results: List[GradingResult]):
-        """Render element performance analysis across all students."""
-        st.markdown("#### 📋 평가 요소별 전체 성과 분석")
-        
-        if not results or not results[0].element_scores:
-            st.info("평가 요소 데이터가 없습니다.")
-            return
-        
-        # Collect element performance data
-        element_data = {}
-        
-        for result in results:
-            for element in result.element_scores:
-                if element.element_name not in element_data:
-                    element_data[element.element_name] = []
-                element_data[element.element_name].append(element.percentage)
-        
-        # Calculate statistics for each element
-        element_stats = {}
-        for element_name, percentages in element_data.items():
-            element_stats[element_name] = {
-                'mean': statistics.mean(percentages),
-                'median': statistics.median(percentages),
-                'std': statistics.stdev(percentages) if len(percentages) > 1 else 0,
-                'min': min(percentages),
-                'max': max(percentages)
+        # 상대등급 정보 표시
+        current_grade = result.get_relative_grade()
+        if current_grade != '미정':
+            grade_info = {
+                '1': '상위 10% (1등급)',
+                '2': '상위 34% (2등급)',
+                '3': '상위 66% (3등급)', 
+                '4': '상위 87% (4등급)',
+                '5': '상위 100% (5등급)'
             }
-        
-        # Create visualization
-        element_names = list(element_stats.keys())
-        means = [element_stats[name]['mean'] for name in element_names]
-        
-        fig = px.bar(
-            x=element_names,
-            y=means,
-            title="평가 요소별 평균 성과",
-            labels={'x': '평가 요소', 'y': '평균 백분율 (%)'}
-        )
-        fig.add_hline(y=80, line_dash="dash", line_color="green", annotation_text="목표 수준 (80%)")
-        st.plotly_chart(fig, use_container_width=True, key="element_performance_bar")
-        
-        # Statistics table
-        st.markdown("**평가 요소별 상세 통계:**")
-        
-        stats_df = pd.DataFrame(element_stats).T
-        stats_df = stats_df.round(1)
-        stats_df.columns = ['평균', '중앙값', '표준편차', '최소값', '최대값']
-        
-        st.dataframe(stats_df, use_container_width=True)
+            if current_grade in grade_info:
+                st.info(f"📊 **상대등급**: {grade_info[current_grade]}")
     
-    def render_time_analysis(self, results: List[GradingResult]):
-        """Render grading time analysis."""
-        st.markdown("#### ⏱️ 채점 시간 분석")
-        
-        grading_times = [r.grading_time_seconds for r in results]
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Time distribution
-            fig = px.histogram(
-                x=grading_times,
-                nbins=15,
-                title="채점 시간 분포",
-                labels={'x': '채점 시간 (초)', 'y': '학생 수'}
-            )
-            avg_time = statistics.mean(grading_times)
-            fig.add_vline(x=avg_time, line_dash="dash", line_color="red",
-                         annotation_text=f"평균: {avg_time:.1f}초")
-            st.plotly_chart(fig, use_container_width=True, key="grading_time_histogram")
-        
-        with col2:
-            # Time vs Score correlation
-            percentages = [r.percentage for r in results]
-            fig = px.scatter(
-                x=grading_times,
-                y=percentages,
-                title="채점 시간 vs 점수 상관관계",
-                labels={'x': '채점 시간 (초)', 'y': '백분율 점수 (%)'}
-            )
-            st.plotly_chart(fig, use_container_width=True, key="time_vs_score_scatter")
-        
-        # Time statistics
-        st.markdown("**채점 시간 통계:**")
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("평균 시간", f"{statistics.mean(grading_times):.1f}초")
-        
-        with col2:
-            st.metric("중앙값", f"{statistics.median(grading_times):.1f}초")
-        
-        with col3:
-            st.metric("최소 시간", f"{min(grading_times):.1f}초")
-        
-        with col4:
-            st.metric("최대 시간", f"{max(grading_times):.1f}초")
+
     
-    def render_correlation_analysis(self, results: List[GradingResult]):
-        """Render correlation analysis between different metrics."""
-        st.markdown("#### 🔗 상관관계 분석")
-        
-        if len(results) < 3:
-            st.info("상관관계 분석을 위해서는 최소 3명 이상의 결과가 필요합니다.")
-            return
-        
-        # Prepare correlation data
-        data = {
-            '총점': [r.total_score for r in results],
-            '백분율': [r.percentage for r in results],
-            '채점시간': [r.grading_time_seconds for r in results]
-        }
-        
-        # Add element scores if available
-        if results[0].element_scores:
-            for element in results[0].element_scores:
-                element_name = element.element_name
-                data[f'{element_name}_점수'] = []
-                
-                for result in results:
-                    element_score = next((e.score for e in result.element_scores if e.element_name == element_name), 0)
-                    data[f'{element_name}_점수'].append(element_score)
-        
-        # Create correlation matrix
-        df = pd.DataFrame(data)
-        correlation_matrix = df.corr()
-        
-        # Visualize correlation matrix
-        fig = px.imshow(
-            correlation_matrix,
-            title="상관관계 매트릭스",
-            color_continuous_scale='RdBu',
-            aspect='auto'
-        )
-        fig.update_layout(height=500)
-        st.plotly_chart(fig, use_container_width=True, key="correlation_heatmap")
-        
-        # Highlight strong correlations
-        st.markdown("**주요 상관관계:**")
-        
-        strong_correlations = []
-        for i in range(len(correlation_matrix.columns)):
-            for j in range(i+1, len(correlation_matrix.columns)):
-                corr_value = correlation_matrix.iloc[i, j]
-                if abs(corr_value) > 0.7:  # Strong correlation threshold
-                    var1 = correlation_matrix.columns[i]
-                    var2 = correlation_matrix.columns[j]
-                    strong_correlations.append((var1, var2, corr_value))
-        
-        if strong_correlations:
-            for var1, var2, corr in strong_correlations:
-                correlation_type = "강한 양의 상관관계" if corr > 0 else "강한 음의 상관관계"
-                st.write(f"- **{var1}** ↔ **{var2}**: {corr:.3f} ({correlation_type})")
-        else:
-            st.info("강한 상관관계(|r| > 0.7)를 보이는 변수 쌍이 없습니다.")
+
+    
+
+    
+
     
     def render_export_options(self, results: List[GradingResult]):
         """Render export options for results."""
@@ -792,7 +632,7 @@ class ResultsUI:
         # Apply grade filter
         filtered_results = results
         if grade_filter != "all":
-            filtered_results = [r for r in results if r.grade_letter == grade_filter]
+            filtered_results = [r for r in results if r.get_relative_grade() == grade_filter]
         
         # Apply sorting
         reverse = (sort_order == "desc")
@@ -875,17 +715,26 @@ class ResultsUI:
         # Grade distribution insights
         grade_counts = {}
         for result in results:
-            grade = result.grade_letter
+            grade = result.get_relative_grade()
             grade_counts[grade] = grade_counts.get(grade, 0) + 1
         
         st.markdown("#### 🎯 등급 분포 분석")
         total_students = len(results)
         
-        for grade in ['A', 'B', 'C', 'D', 'F']:
+        grade_descriptions = {
+            '1': '1등급 (상위 10%)',
+            '2': '2등급 (상위 34%)',
+            '3': '3등급 (상위 66%)',
+            '4': '4등급 (상위 87%)',
+            '5': '5등급 (상위 100%)'
+        }
+        
+        for grade in ['1', '2', '3', '4', '5']:
             count = grade_counts.get(grade, 0)
             percentage = (count / total_students * 100) if total_students > 0 else 0
             if count > 0:
-                st.write(f"- **{grade}등급**: {count}명 ({percentage:.1f}%)")
+                grade_desc = grade_descriptions.get(grade, f"{grade}등급")
+                st.write(f"- **{grade_desc}**: {count}명 ({percentage:.1f}%)")
         
         # Performance recommendations
         st.markdown("#### 💡 개선 제안")

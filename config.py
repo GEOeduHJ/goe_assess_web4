@@ -44,7 +44,7 @@ class Config:
     # 애플리케이션 설정
     APP_TITLE: str = get_config_value("APP_TITLE", "지리과 자동 채점 플랫폼")
     MAX_FILE_SIZE_MB: int = int(get_config_value("MAX_FILE_SIZE_MB", "100"))
-    EMBEDDING_MODEL: str = get_config_value("EMBEDDING_MODEL", "nlpai-lab/KURE-v1")
+    EMBEDDING_MODEL: str = get_config_value("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2") # rag_service.py와 동기화 필요
     FAISS_INDEX_TYPE: str = get_config_value("FAISS_INDEX_TYPE", "IndexFlatIP")
     
     # 처리 설정

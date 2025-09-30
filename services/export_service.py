@@ -144,7 +144,7 @@ class ExportService:
                     '총점': getattr(result, 'total_score', 0),
                     '만점': getattr(result, 'total_max_score', 0),
                     '백분율': round(getattr(result, 'percentage', 0), 1),
-                    '등급': getattr(result, 'grade_letter', 'N/A'),
+                    '등급': getattr(result, '_relative_grade', '미정'),
                     '채점시간(초)': round(getattr(result, 'grading_time_seconds', 0), 1),
                     '채점완료시각': result.graded_at.strftime('%Y-%m-%d %H:%M:%S') if getattr(result, 'graded_at', None) else '',
                     '전체피드백': getattr(result, 'overall_feedback', '') or '[피드백 없음]'
@@ -245,8 +245,14 @@ class ExportService:
         
         # Grade distribution
         grade_counts = {}
+        # 상대등급 계산 및 설정
+        from models.result_model import GradingResult
+        grade_mapping = GradingResult.calculate_relative_grades(results)
         for result in results:
-            grade = getattr(result, 'grade_letter', 'N/A')
+            key = f"{result.student_name}_{result.student_class_number}"
+            if key in grade_mapping:
+                result.set_relative_grade(grade_mapping[key])
+            grade = result.get_relative_grade()
             grade_counts[grade] = grade_counts.get(grade, 0) + 1
         
         # Create summary data
@@ -262,7 +268,7 @@ class ExportService:
             ['등급 분포', '학생 수'],
         ]
         
-        for grade in ['A', 'B', 'C', 'D', 'F']:
+        for grade in ['1', '2', '3', '4', '5']:
             count = grade_counts.get(grade, 0)
             percentage = (count / total_students * 100) if total_students > 0 else 0
             summary_data.append([f'{grade}등급', f'{count}명 ({percentage:.1f}%)'])

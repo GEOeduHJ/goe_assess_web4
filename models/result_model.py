@@ -152,18 +152,10 @@ class GradingResult:
     
     @property
     def grade_letter(self) -> str:
-        """백분율을 기준으로 문자 등급을 가져옵니다."""
-        percentage = self.percentage
-        if percentage >= 90:
-            return "A"
-        elif percentage >= 80:
-            return "B"
-        elif percentage >= 70:
-            return "C"
-        elif percentage >= 60:
-            return "D"
-        else:
-            return "F"
+        """상대평가 기준 1~5등급을 반환합니다. (별도 계산 필요)"""
+        # 이 속성은 상대평가를 위해 전체 결과와 함께 계산되어야 합니다.
+        # 단일 결과만으로는 상대등급을 결정할 수 없으므로 기본값 반환
+        return "미정"
     
     def to_dict(self) -> Dict:
         """채점 결과를 딕셔너리 형식으로 변환합니다."""
@@ -184,7 +176,7 @@ class GradingResult:
             "total_score": self.total_score,
             "total_max_score": self.total_max_score,
             "percentage": self.percentage,
-            "grade_letter": self.grade_letter,
+            "grade_letter": self.get_relative_grade(),
             "grading_time_seconds": self.grading_time_seconds,
             "graded_at": self.graded_at.isoformat() if self.graded_at else None,
             "overall_feedback": self.overall_feedback
@@ -216,6 +208,77 @@ class GradingResult:
         
         return result
     
+    @staticmethod
+    def calculate_relative_grades(results: List['GradingResult']) -> Dict[str, str]:
+        """
+        한국 내신 5등급제 기준으로 상대등급을 계산합니다.
+        동점자는 모두 같은 등급을 받습니다.
+        1등급: 상위 10% (누적 0-10%)
+        2등급: 상위 34% (누적 10-34%)
+        3등급: 상위 66% (누적 34-66%)
+        4등급: 상위 87% (누적 66-87%)
+        5등급: 상위 100% (누적 87-100%)
+        
+        Args:
+            results: 채점 결과 리스트
+            
+        Returns:
+            Dict[str, str]: {"학생명_반": "등급"} 매핑
+        """
+        if not results:
+            return {}
+        
+        # 백분율 기준으로 정렬 (내림차순)
+        sorted_results = sorted(results, key=lambda x: x.percentage, reverse=True)
+        total_students = len(sorted_results)
+        
+        grade_mapping = {}
+        
+        # 동점자 그룹별로 처리
+        i = 0
+        while i < len(sorted_results):
+            current_percentage = sorted_results[i].percentage
+            
+            # 같은 점수를 가진 학생들 찾기
+            same_score_group = []
+            j = i
+            while j < len(sorted_results) and sorted_results[j].percentage == current_percentage:
+                same_score_group.append(sorted_results[j])
+                j += 1
+            
+            # 이 그룹의 시작 순위로 등급 결정 (가장 높은 순위 기준)
+            start_rank = i + 1  # 1-based ranking
+            percentile_start = ((start_rank - 1) / total_students) * 100
+            
+            # 등급 결정
+            if percentile_start < 10:
+                grade = "1"
+            elif percentile_start < 34:
+                grade = "2"
+            elif percentile_start < 66:
+                grade = "3"
+            elif percentile_start < 87:
+                grade = "4"
+            else:
+                grade = "5"
+            
+            # 같은 점수를 가진 모든 학생에게 같은 등급 부여
+            for result in same_score_group:
+                key = f"{result.student_name}_{result.student_class_number}"
+                grade_mapping[key] = grade
+            
+            i = j  # 다음 그룹으로 이동
+        
+        return grade_mapping
+    
+    def set_relative_grade(self, grade: str):
+        """상대평가 등급을 설정합니다."""
+        self._relative_grade = grade
+    
+    def get_relative_grade(self) -> str:
+        """상대평가 등급을 반환합니다."""
+        return getattr(self, '_relative_grade', '미정')
+
     def to_json(self) -> str:
         """채점 결과를 JSON 문자열로 변환합니다."""
         return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)

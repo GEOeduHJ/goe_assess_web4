@@ -1,6 +1,6 @@
-# 🏗️ 지리과 자동 채점 플랫폼 아키텍처
+# 🏗️ 지리과 자동 채점 플랫폼 아키텍처 (업데이트)
 
-이 문서는 지리과 자동 채점 플랫폼의 전체 시스템 아키텍처와 데이터 흐름을 설명합니다.
+이 문서는 최신 코드 기준(동적 Groq 모델 선택, Gemini 2.5 Flash 고정, 사용되지 않는 `prompt_utils.py` 정리 상태)을 반영한 전체 시스템 아키텍처와 데이터 흐름을 설명합니다.
 
 ## 1. 전체 프로젝트 구조
 
@@ -8,104 +8,87 @@
 flowchart TD
     %% Frontend Layer
     subgraph "🖥️ Frontend Layer"
-        UI[Streamlit Web UI]
-        MAIN[main_ui.py<br/>메인 인터페이스]
-        RUBRIC[rubric_ui.py<br/>루브릭 설정]
-        EXEC[grading_execution_ui.py<br/>채점 실행]
+        MAIN[main_ui.py<br/>모델/파일/루브릭 설정]
+        EXEC[grading_execution_ui.py<br/>채점 실행 & 진행률]
         RESULT[results_ui.py<br/>결과 표시]
+        RUBRIC[rubric_ui.py<br/>루브릭 편집]
     end
-    
-    %% Application Entry Point
-    subgraph "🚀 Application Entry"
-        APP[app.py<br/>메인 진입점]
-        CONFIG[config.py<br/>환경설정 관리]
+
+    %% Entry / Config
+    subgraph "🚀 Entry & Config"
+        APP[app.py<br/>진입 & 라우팅]
+        CONFIG[config.py<br/>환경/키/튜닝값]
     end
-    
-    %% Core Services Layer
+
+    %% Core Services
     subgraph "⚙️ Core Services"
-        LLM[llm_service.py<br/>AI 모델 통합]
-        RAG[rag_service.py<br/>문서 검색]
-        GRADING[grading_engine.py<br/>채점 엔진]
-        FILE[file_service.py<br/>파일 처리]
+        LLM[llm_service.py<br/>LLM 통합 & 프롬프트]
+        RAG[rag_service.py<br/>문서 임베딩 검색]
+        GRADING[grading_engine.py<br/>채점 시퀀스]
+        FILE[file_service.py<br/>입력 검증]
         EXPORT[export_service.py<br/>결과 내보내기]
     end
-    
-    %% Data Models Layer
+
+    %% Data Models
     subgraph "📊 Data Models"
-        STUDENT[student_model.py<br/>학생 정보]
-        RUBRICM[rubric_model.py<br/>루브릭 모델]
-        RESULTM[result_model.py<br/>채점 결과]
+        STUDENT[student_model.py]
+        RUBRICM[rubric_model.py]
+        RESULTM[result_model.py]
     end
-    
-    %% Utilities Layer
+
+    %% Utilities (활성)
     subgraph "🛠️ Utilities"
-        PROMPT[prompt_utils.py<br/>프롬프트 생성]
-        EMBED[embedding_utils.py<br/>임베딩 처리]
-        ERR[error_handler.py<br/>오류 처리]
+        EMBED_UTIL[embedding_utils.py]
+        ERR[error_handler.py]
+        PROMPT_DEPRECATED[prompt_utils.py (미사용)]
     end
-    
-    %% External Services
-    subgraph "🌐 External Services"
-        GEMINI[Google Gemini API<br/>멀티모달 AI]
-        GROQ[Groq API<br/>고속 텍스트 AI]
-        HF[HuggingFace Models<br/>임베딩 모델]
+
+    %% External APIs
+    subgraph "🌐 External"
+        GEMINI[Gemini 2.5 Flash]
+        GROQ[Groq (Qwen3 / GPT-OSS)]
+        HF[HuggingFace<br/>sentence-transformers]
     end
-    
-    %% Data Storage
-    subgraph "💾 Data Storage"
-        FAISS[(FAISS Vector Store<br/>벡터 검색)]
-        TEMP[(Temporary Files<br/>임시 파일)]
-        EXCEL[(Excel Output<br/>결과 파일)]
+
+    %% Storage
+    subgraph "💾 Storage"
+        FAISS[(FAISS Vector Store)]
+        TEMP[(Temp Files)]
+        EXCEL[(Exported Excel)]
     end
-    
-    %% Connections - Top to Bottom Flow
-    UI --> APP
+
     MAIN --> APP
     RUBRIC --> APP
     EXEC --> APP
     RESULT --> APP
-    
+
     APP --> CONFIG
-    APP --> LLM
-    APP --> RAG
     APP --> GRADING
     APP --> FILE
     APP --> EXPORT
-    
-    LLM --> PROMPT
-    LLM --> GEMINI
-    LLM --> GROQ
-    
-    RAG --> EMBED
-    RAG --> HF
-    RAG --> FAISS
-    
+
+    GRADING --> LLM
+    GRADING --> RAG
     GRADING --> STUDENT
     GRADING --> RUBRICM
     GRADING --> RESULTM
-    
+
+    LLM --> GEMINI
+    LLM --> GROQ
+    RAG --> FAISS
+    RAG --> HF
     FILE --> TEMP
     EXPORT --> EXCEL
-    
-    PROMPT --> ERR
-    EMBED --> ERR
-    
-    %% Styling
-    classDef frontend fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
-    classDef app fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    classDef service fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
-    classDef model fill:#fff3e0,stroke:#f57c00,stroke-width:2px
-    classDef util fill:#fce4ec,stroke:#c2185b,stroke-width:2px
-    classDef external fill:#e0f2f1,stroke:#00695c,stroke-width:2px
-    classDef storage fill:#f1f8e9,stroke:#558b2f,stroke-width:2px
-    
-    class UI,MAIN,RUBRIC,EXEC,RESULT frontend
-    class APP,CONFIG app
-    class LLM,RAG,GRADING,FILE,EXPORT service
-    class STUDENT,RUBRICM,RESULTM model
-    class PROMPT,EMBED,ERR util
-    class GEMINI,GROQ,HF external
-    class FAISS,TEMP,EXCEL storage
+
+    LLM --> ERR
+    RAG --> ERR
+    GRADING --> ERR
+
+    EMBED_UTIL --> RAG
+    PROMPT_DEPRECATED -. 참조 제거 .- LLM
+
+    classDef deprecated fill:#eeeeee,stroke:#999,stroke-dasharray:4 2,color:#666
+    class PROMPT_DEPRECATED deprecated
 ```
 
 ## 2. 플랫폼 이용자 흐름
@@ -164,7 +147,9 @@ flowchart TD
     style RESULTS fill:#f3e5f5
 ```
 
-## 3. 프롬프트 구성 흐름
+## 3. 프롬프트 구성 흐름 (현재 구현)
+
+프롬프트 생성 로직은 `llm_service.py` 의 `generate_prompt()` 안에 통합되어 있으며, 별도 `prompt_utils.py` 는 더 이상 사용되지 않습니다.
 
 ```mermaid
 flowchart TD
@@ -173,16 +158,13 @@ flowchart TD
     TYPE -->|서술형| DESC_FLOW[서술형 프롬프트 구성]
     TYPE -->|백지도형| MAP_FLOW[백지도형 프롬프트 구성]
     
-    subgraph "서술형 프롬프트 구성"
-        DESC_FLOW --> RAG_QUERY[RAG 쿼리 생성]
-        RAG_QUERY --> RAG_SEARCH[벡터 검색 실행]
-        RAG_SEARCH --> REF_CONTENT[참고 자료 추출]
-        
-        REF_CONTENT --> DESC_PROMPT[서술형 프롬프트 조립]
+    subgraph "서술형 (Descriptive)"
+        DESC_FLOW --> RAG_SEARCH[Top-K 벡터 검색 (k=3)]
+        RAG_SEARCH --> REF_CONTENT[관련 컨텍스트 정리]
+        REF_CONTENT --> DESC_PROMPT[루브릭 + 참고 + 답안 통합]
         RUBRIC_FORMAT --> DESC_PROMPT
         STUDENT_TEXT[학생 텍스트 답안] --> DESC_PROMPT
-        
-        DESC_PROMPT --> DESC_FINAL[최종 텍스트 프롬프트]
+        DESC_PROMPT --> DESC_FINAL[JSON 요구 포맷 포함 프롬프트]
     end
     
     subgraph "백지도형 프롬프트 구성"
@@ -194,9 +176,12 @@ flowchart TD
     end
     
     subgraph "공통 구성 요소"
-        RUBRIC_DATA[루브릭 데이터] --> RUBRIC_FORMAT[루브릭 포맷팅]
-        OUTPUT_FORMAT[JSON 출력 형식] --> RUBRIC_FORMAT
-        GRADING_INST[채점 지시사항] --> RUBRIC_FORMAT
+        RUBRIC_DATA[루브릭 요소/기준]
+        OUTPUT_FORMAT[출력 JSON 스키마]
+        INSTRUCTIONS[채점 역할 지시]
+        RUBRIC_DATA --> RUBRIC_FORMAT[루브릭 문자열화]
+        OUTPUT_FORMAT --> RUBRIC_FORMAT
+        INSTRUCTIONS --> RUBRIC_FORMAT
     end
     
     DESC_FINAL --> LLM_CALL[LLM API 호출]
@@ -218,7 +203,11 @@ flowchart TD
     style RESULT fill:#c8e6c9
 ```
 
-## 4. RAG 파이프라인 작동 방식
+## 4. RAG 파이프라인 작동 방식 (실제 코드 기준)
+
+`rag_service.py` 는 LangChain `FAISS` + `HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")` 를 사용합니다.
+
+`config.py` 의 `EMBEDDING_MODEL = nlpai-lab/KURE-v1` 은 현재 RAG 서비스에서는 직접 사용되지 않으며(잠재적 향후 교체 포인트), 문서화된 기본 파이프라인과 실제 구현 간 차이를 아래에 명확히 표기합니다.
 
 ```mermaid
 flowchart TD
@@ -233,18 +222,18 @@ flowchart TD
     
     CLEAN --> CHUNK[문서 청킹]
     
-    subgraph "청킹 과정"
-        CHUNK --> SPLIT[500토큰 단위 분할]
-        SPLIT --> OVERLAP[100토큰 중복]
-        OVERLAP --> CHUNK_LIST[청크 리스트 생성]
+    subgraph "청킹 과정 (실제)"
+        CHUNK --> SPLIT[고정 길이 300자]
+        SPLIT --> OVERLAP[50자 겹침 이동]
+        OVERLAP --> CHUNK_LIST[청크 리스트]
     end
     
     CHUNK_LIST --> EMBED[임베딩 생성]
     
     subgraph "임베딩 과정"
-        EMBED --> MODEL[all-MiniLM-L6-v2 모델]
-        MODEL --> VECTORS[벡터 변환]
-        VECTORS --> NORM[벡터 정규화]
+        EMBED --> MODEL[sentence-transformers/<br/>all-MiniLM-L6-v2]
+        MODEL --> VECTORS[임베딩 생성]
+        VECTORS --> NORM[정규화]
     end
     
     NORM --> FAISS_BUILD[FAISS 인덱스 구축]
@@ -253,10 +242,10 @@ flowchart TD
     STORE --> READY[RAG 준비 완료]
     
     subgraph "검색 과정"
-        QUERY[학생 답안 쿼리] --> QUERY_EMBED[쿼리 임베딩]
-        QUERY_EMBED --> SEARCH[유사도 검색]
-        SEARCH --> TOP_K[Top-3 문서 선택]
-        TOP_K --> RETRIEVE[관련 내용 추출]
+            QUERY[학생 답안 텍스트] --> QUERY_EMBED[임베딩]
+            QUERY_EMBED --> SEARCH[FAISS Similarity]
+            SEARCH --> TOP_K[Top-3]
+            TOP_K --> RETRIEVE[컨텍스트 리스트]
     end
     
     READY -.-> SEARCH
@@ -269,14 +258,12 @@ flowchart TD
     style CONTEXT fill:#c8e6c9
 ```
 
-## 5. 채점 로직
+## 5. 채점 로직 (Sequential)
 
 ```mermaid
 flowchart TD
     START[채점 시작] --> INIT[채점 엔진 초기화]
-    INIT --> STUDENT_QUEUE[학생 대기열 생성]
-    
-    STUDENT_QUEUE --> NEXT_STUDENT[다음 학생 선택]
+    INIT --> NEXT_STUDENT[학생 반복 시작]
     NEXT_STUDENT --> TIMER_START[타이머 시작]
     
     TIMER_START --> ANSWER_TYPE{답안 유형}
@@ -284,13 +271,10 @@ flowchart TD
     ANSWER_TYPE -->|텍스트| TEXT_PROCESS[텍스트 답안 처리]
     ANSWER_TYPE -->|이미지| IMAGE_PROCESS[이미지 답안 처리]
     
-    subgraph "텍스트 채점 흐름"
-        TEXT_PROCESS --> RAG_ENABLE{RAG 활성화?}
-        RAG_ENABLE -->|Yes| RAG_SEARCH[관련 문서 검색]
-        RAG_ENABLE -->|No| DIRECT_PROMPT[직접 프롬프트]
-        RAG_SEARCH --> TEXT_PROMPT[텍스트 프롬프트 생성]
-        DIRECT_PROMPT --> TEXT_PROMPT
-        TEXT_PROMPT --> TEXT_LLM[텍스트 LLM 호출]
+    subgraph "텍스트 채점"
+        TEXT_PROCESS --> RAG_SEARCH[최대 3개 관련 청크]
+        RAG_SEARCH --> TEXT_PROMPT[프롬프트 조립]
+        TEXT_PROMPT --> TEXT_LLM[Groq 또는 Gemini]
     end
     
     subgraph "이미지 채점 흐름"
@@ -343,27 +327,300 @@ flowchart TD
     style END fill:#4caf50
 ```
 
-## 시스템 특징
+## 6. 모델 선택 및 토큰 관리
+
+| 항목 | 내용 |
+|------|------|
+| Gemini 모델 | 고정: `gemini-2.5-flash` (텍스트 + 멀티모달) |
+| Groq 지원 모델 | `qwen/qwen3-32b`, `openai/gpt-oss-120b` (UI 선택 세션 반영) |
+| 선택 흐름 | UI(`selected_groq_model`) → `LLMService.get_selected_groq_model()` → `call_groq_api()` |
+| 이미지 채점 | 백지도형은 Gemini 강제 (Groq 이미지 미지원) |
+| max_tokens 정책 | qwen: 40,960 / gpt-oss: 65,536 (초과 방지) |
+| 프롬프트 구성 | `LLMService.generate_prompt()` 내부 구현 (JSON 스키마 명시) |
+| 캐싱 | 프롬프트+이미지 해시 기반 메모리 캐시 (TTL: `API_CACHE_TTL_SECONDS`) |
+
+## 7. 학생 처리 용량
+
+현재 코드에 학생 수에 대한 **명시적 제한은 없습니다.**
+
+- `grading_engine.py` / `llm_service.py` 는 단순 `for i, student in enumerate(students)` 시퀀스 처리
+- `config.BATCH_PROCESSING_SIZE=10` 은 UI 일부에서 표시되지만 실제 배치 분할/슬라이싱 로직 미적용 (미사용 상태)
+- 매우 많은 학생 처리 시 (수백+): API 레이트·시간 지연 가능 → 향후 개선 아이디어:
+    - 비동기/병렬 처리 풀 도입
+    - 실패/성공 체크포인트 및 재시작 가능 지점 저장
+    - 진행률 상태 외부 저장(예: Redis) 고려
+
+## 8. 캐싱 & 재시도 & 오류 처리
+
+| 영역 | 메커니즘 |
+|------|-----------|
+| API 응답 캐시 | `response_cache` (Key: prompt + 이미지 해시) / LRU 유사 수동 정리 |
+| TTL | `API_CACHE_TTL_SECONDS` (기본 300초 예상) |
+| 재시도 | `retry_with_backoff` (지수 백오프) / Groq & Gemini 공통 |
+| 오류 분류 | `ErrorType` (AUTH, RATE_LIMIT, PARSING, NETWORK, API_COMMUNICATION 등) |
+| 사용자 메시지 | `handle_error` 가 내부 로그 + 사용자 친화 메시지 반환 |
+| 파싱 복원력 | 응답 내 최초 `{` ~ 최종 `}` 추출 후 JSONDecode 재시도; 필드 누락 검증 |
+
+## 9. 미사용 / 개선 대상
+
+| 항목 | 상태 | 비고 |
+|------|------|------|
+| `prompt_utils.py` | 미사용 | 삭제하거나 참고용으로 명시 유지 중 |
+| `config.EMBEDDING_MODEL` | RAG 미사용 | 향후 통일 시 RAGService 교체 가능 |
+| `BATCH_PROCESSING_SIZE` | 논리 미적용 | 실제 배치 처리 구현 시 사용 고려 |
+
+## 10. 향후 확장 포인트
+
+1. Groq 모델 추가 (예: Mixtral, Llama 계열) 시 `max_tokens` 매핑 표 분리
+2. RAG 임베딩 모델을 `config.EMBEDDING_MODEL` 과 통합 (환경 전환 편의)
+3. 채점 결과 메타데이터(프롬프트 해시, 모델 버전) 저장 → 재현성 향상
+4. 병렬 채점 (ThreadPool / Async) + 레이트 리미트 어댑터
+5. 장기 캐시 (디스크 or Redis) 로 동일 답안 재채점 비용 절감
+6. JSON 스키마 검증을 Pydantic 모델로 엄격화
+7. 에러 대시보드 (발생 빈도, 재시도 성공률) 시각화
+
+## 시스템 특징 (요약)
 
 ### 🔧 **아키텍처 설계 원칙**
-- **모듈 분리**: UI, Service, Model 계층 명확 분리
-- **확장성**: 새로운 AI 모델 및 채점 유형 추가 용이
-- **안정성**: 오류 처리 및 재시도 메커니즘
-- **성능**: 순차 처리 및 진행률 추적
+- **모듈 분리**: UI / Service / Model / Utility 계층화
+- **단순성**: 프롬프트 로직 단일 서비스 집중 (`LLMService`)
+- **회복력**: 재시도, 오류 타입 분류, 기본 안전 점수 처리
+- **가시성**: 진행률, 디버그 로그 (선택된 Groq 모델, max_tokens)
+- **점진적 확장**: 현재 단일 스레드 → 향후 병렬화 준비
 
 ### 🚀 **핵심 기술 스택**
-- **Frontend**: Streamlit (Python 웹 UI)
-- **AI Models**: Google Gemini, Groq
-- **Vector Search**: FAISS + HuggingFace Embeddings
-- **Data Processing**: Pandas, OpenPyXL
-- **Document Processing**: PyPDF2, python-docx
+- **Frontend**: Streamlit
+- **LLM**: Gemini 2.5 Flash (멀티모달), Groq (Qwen3-32B / GPT-OSS-120B)
+- **RAG**: FAISS + sentence-transformers/all-MiniLM-L6-v2
+- **Data 처리**: Pandas, OpenPyXL
+- **문서 처리**: PyPDF2, python-docx
 
 ### 📊 **데이터 흐름**
-1. **입력**: 문서 → 청킹 → 임베딩 → 벡터 저장
-2. **처리**: 쿼리 → 검색 → 프롬프트 → AI 추론
-3. **출력**: 결과 → 검증 → 저장 → 시각화
+1. 업로드된 참고 문서 → 300자/50자겹침 청킹 → 임베딩 → FAISS 인덱스
+2. 학생 답안 → Top-3 컨텍스트 검색 → 루브릭/지시/컨텍스트 결합 → LLM 호출
+3. LLM JSON 응답 → 구조/필드 검증 → 결과 객체화 → UI/Export
 
 ### 🔒 **보안 및 설정**
-- **API 키 관리**: 환경변수 및 Streamlit Secrets
-- **파일 처리**: 임시 파일 자동 정리
-- **오류 처리**: 체계적인 예외 처리 및 로깅
+- **API 키**: 환경 변수 / `st.secrets` 조회 (`config.get_config_value`)
+- **임시 파일**: `tempfile` 활용 후 정리
+- **오류 처리**: `handle_error` + 사용자 친화 메시지
+- **로그**: 모델 선택 / 이미지 사용 여부 / 응답 파싱 경계 로그
+
+---
+문서 최신화 시점: 현재 코드 기준 (`llm_service.py` 동적 Groq 모델 & max_tokens 적용 완료). 추가 변경 발생 시 본 문서를 재생성하거나 섹션별 Diff 반영을 권장합니다.
+
+---
+## 부록 A. 추가 아키텍처 다이어그램 (확장 뷰)
+
+### A.1 컴포넌트 상호작용 (정제 뷰)
+```mermaid
+flowchart LR
+    subgraph UI[Streamlit UI]
+        A[main_ui\n모델/파일/루브릭]
+        B[grading_execution_ui\n채점 진행]
+        C[results_ui\n결과/통계]
+        D[rubric_ui]
+    end
+
+    subgraph SERVICES[Service Layer]
+        LLM[llm_service\n프롬프트+LLM]
+        RAG[rag_service\n문서→FAISS]
+        GE[grading_engine\n순차 채점]
+        FS[file_service\n검증/파싱]
+        EX[export_service\n엑셀 출력]
+    end
+
+    subgraph MODELS[Models]
+        ST[Student]
+        RB[Rubric]
+        GR[GradingResult]
+        ES[ElementScore]
+    end
+
+    subgraph UTILS[Utilities]
+        EH[error_handler]
+        EM[embedding_utils]
+        PU[prompt_utils (미사용)]
+    end
+
+    subgraph EXT[External APIs]
+        G1[Gemini 2.5 Flash]
+        G2[Groq Qwen3 / GPT-OSS]
+        HF[HuggingFace Embeddings]
+    end
+
+    subgraph STORAGE[Storage]
+        VX[(FAISS Index)]
+        TMP[(Temp Files)]
+        XLS[(Exported Excel)]
+    end
+
+    A --> FS --> ST
+    A --> RB
+    A --> RAG
+    A --> B
+    B --> GE
+    GE -->|생성| GR
+    GE --> ST
+    GE --> RB
+    GE --> LLM
+    GE -->|옵션| RAG
+    LLM --> G1
+    LLM --> G2
+    RAG --> HF --> VX
+    LLM --> EH
+    RAG --> EH
+    GE --> EH
+    EX --> XLS
+    FS --> TMP
+    EM --> RAG
+    PU -. deprecated .- LLM
+
+    classDef deprecated fill:#f5f5f5,stroke:#bbb,stroke-dasharray:3 3,color:#777
+    class PU deprecated
+```
+
+### A.2 채점 시퀀스 (단일 학생)
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as GradingExecutionUI
+    participant GE as GradingEngine
+    participant LLM as LLMService
+    participant RAG as RAGService
+    participant API as Gemini/Groq
+    participant PARSE as Parse/Validate
+
+    UI->>GE: grade_student()
+    GE->>LLM: select_model()
+    alt descriptive & docs 존재
+        GE->>RAG: search_relevant_content()
+        RAG-->>GE: top-3 context
+    else map or no RAG
+        GE-->>GE: skip retrieval
+    end
+    GE->>LLM: generate_prompt()
+    LLM->>API: invoke(model, prompt[, image])
+    API-->>LLM: raw text
+    LLM->>PARSE: parse_response()
+    PARSE-->>LLM: structured JSON
+    LLM-->>GE: GradingResult
+    GE-->>UI: update progress
+```
+
+### A.3 RAG 상세 (요약 재표현)
+```mermaid
+flowchart TD
+    U[업로드 파일] --> EXT{PDF/DOCX?}
+    EXT -->|PDF| P[PyPDF2 추출]
+    EXT -->|DOCX| D[python-docx 추출]
+    EXT -->|기타| IGN[무시]
+    P --> CLEAN[Strip]
+    D --> CLEAN
+    CLEAN --> CHUNK[300자 슬라이딩\nOverlap 50]
+    CHUNK --> DOCS[LangChain Document[]]
+    DOCS --> EMB[HuggingFace Embeddings]
+    EMB --> VEC[(FAISS Index)]
+    Q[학생 답안] --> QEMB[임베딩]
+    QEMB --> SRCH[Similarity]
+    SRCH --> TOP[Top-3]
+    TOP --> CTX[컨텍스트 문자열]
+```
+
+### A.4 LLM 호출 & 캐싱 파이프라인
+```mermaid
+flowchart LR
+    PROMPT[프롬프트 문자열] --> KEY[해시 생성]
+    KEY --> HIT{캐시 존재?}
+    HIT -->|Yes| RETURN[캐시 응답]
+    HIT -->|No| PREP[모델/토큰 결정]
+    PREP --> CALL[API 호출]
+    CALL --> RAW[LLM 원문]
+    RAW --> PARSE[JSON 추출/검증]
+    PARSE -->|성공| SAVE[캐시에 저장]
+    SAVE --> RETURN
+    PARSE -->|실패| RETRY{재시도 남음?}
+    RETRY -->|Yes| PREP
+    RETRY -->|No| ERROR[오류 결과]
+```
+
+### A.5 오류 처리 흐름
+```mermaid
+flowchart TD
+    TRY[실행 블록] --> ERR?{예외 발생}
+    ERR? -->|No| OK[정상 진행]
+    ERR? -->|Yes| ANALYZE[문자열 기반 분류]
+    ANALYZE --> TYPE[ErrorType 매핑]
+    TYPE --> HANDLE[handle_error\n로그+사용자메시지]
+    HANDLE --> RETRY?{재시도 가능}
+    RETRY? -->|Yes| BACKOFF[지수 대기]
+    BACKOFF --> TRY
+    RETRY? -->|No| FAIL[에러 결과/0점]
+```
+
+### A.6 데이터 모델 관계
+```mermaid
+classDiagram
+    class Rubric {
+        +List~RubricElement~ elements
+        +int total_max_score
+    }
+    class RubricElement {
+        +str name
+        +int max_score
+        +List~ScoreCriteria~ criteria
+    }
+    class ScoreCriteria {
+        +int score
+        +str description
+    }
+    class Student {
+        +str name
+        +str class_number
+        +str answer
+        +Optional~str~ image_path
+    }
+    class GradingResult {
+        +str student_name
+        +str student_class_number
+        +float grading_time_seconds
+        +str overall_feedback
+        +List~ElementScore~ element_scores
+        +add_element_score()
+        +calculate_total()
+    }
+    class ElementScore {
+        +str element_name
+        +int score
+        +int max_score
+        +str reasoning
+        +str feedback
+    }
+    Rubric --> RubricElement
+    RubricElement --> ScoreCriteria
+    GradingResult --> ElementScore
+    Student --> GradingResult : produces
+```
+
+### A.7 (제안) 병렬/배치 확장 구조
+```mermaid
+flowchart LR
+    UI[UI] --> SCHED[Scheduler\n작업 큐]
+    SCHED --> W1[Worker 1]
+    SCHED --> W2[Worker 2]
+    SCHED --> WN[Worker N]
+    subgraph WORKERS
+        W1 --> LLMW[LLMService]
+        W2 --> LLMW
+        WN --> LLMW
+    end
+    LLMW --> CACHE[(Shared Cache)]
+    LLMW --> API[(Gemini/Groq)]
+    W1 --> PROG[Progress Store]
+    W2 --> PROG
+    WN --> PROG
+    PROG --> UI
+```
+
+---
+부록 다이어그램들은 선택적으로 유지/축소 가능하며, 기여자 온보딩 자료나 기술 발표 자료로 재활용할 수 있습니다.
