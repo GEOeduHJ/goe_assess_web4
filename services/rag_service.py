@@ -6,6 +6,7 @@
 
 import os
 import tempfile
+import re
 from typing import List, Optional
 from dataclasses import dataclass, field
 import logging
@@ -16,6 +17,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document as LangChainDocument
 import PyPDF2
 from docx import Document
+import tiktoken
 
 
 @dataclass
@@ -45,6 +47,8 @@ class RAGService:
             self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
             self.vector_store = None
             self.logger = logging.getLogger(__name__)
+            # 토큰 기반 청크화를 위한 tiktoken 인코더 초기화
+            self.tokenizer = tiktoken.get_encoding("cl100k_base")
             RAGService._initialized = True
         
     def process_documents(self, uploaded_files: List) -> bool:
@@ -206,36 +210,75 @@ class RAGService:
         finally:
             os.unlink(tmp_file_path)  
     
-    def _chunk_document(self, content: str, chunk_size: int = 300, overlap: int = 50) -> List[str]:
+    def _chunk_document(self, content: str, chunk_tokens: int = 500, overlap_tokens: int = 100) -> List[str]:
         """
-        문서 내용을 간단한 겹침 청크로 분할
+        문서 내용을 토큰 기반으로 겹침 청크로 분할 (텍스트 전처리 적용)
         
         Args:
             content: 문서 텍스트 내용
-            chunk_size: 청크당 최대 문자 수 (기본값: 300)
-            overlap: 청크 간 겹칠 문자 수
+            chunk_tokens: 청크당 최대 토큰 수 (기본값: 500)
+            overlap_tokens: 청크 간 겹칠 토큰 수 (기본값: 100)
             
         Returns:
-            텍스트 청크 목록
+            텍스트 청크 목록 (특수 문자 제거됨)
         """
         if not content or len(content.strip()) == 0:
             return []
         
-        content = content.strip()
-        chunks = []
+        # 🔄 텍스트 전처리: 영어, 한글, 숫자 외 특수 문자 제거
+        content = clean_text(content)
         
-        # 겹침이 있는 간단한 문자 기반 청킹
-        start = 0
-        while start < len(content):
-            end = start + chunk_size
-            chunk = content[start:end]
+        if not content:
+            return []
+        
+        # 전체 텍스트를 토큰화
+        tokens = self.tokenizer.encode(content)
+        
+        # 토큰이 chunk_tokens보다 적으면 전체를 하나의 청크로 반환
+        if len(tokens) <= chunk_tokens:
+            return [content]
+        
+        chunks = []
+        start_idx = 0
+        
+        while start_idx < len(tokens):
+            # 청크 끝 인덱스 계산
+            end_idx = min(start_idx + chunk_tokens, len(tokens))
             
-            if chunk.strip():
-                chunks.append(chunk.strip())
+            # 토큰을 텍스트로 디코딩
+            chunk_tokens_slice = tokens[start_idx:end_idx]
+            chunk_text = self.tokenizer.decode(chunk_tokens_slice)
             
-            start += chunk_size - overlap
+            if chunk_text.strip():
+                chunks.append(chunk_text.strip())
+            
+            # 다음 청크의 시작 위치 (오버랩 고려)
+            start_idx += chunk_tokens - overlap_tokens
         
         return chunks
+
+
+def clean_text(text: str) -> str:
+    """
+    텍스트에서 영어, 한글, 숫자를 제외한 불필요한 특수 문자를 제거합니다.
+    
+    Args:
+        text: 원본 텍스트
+        
+    Returns:
+        전처리된 텍스트 (영어 + 한글 + 숫자 + 기본 문장부호만 포함)
+    """
+    if not text:
+        return ""
+    
+    # 영어(a-zA-Z), 한글(가-힣ㄱ-ㅎㅏ-ㅣ), 숫자(0-9), 공백(\s), 기본 문장부호(.!?,;:\-()[]'"°%) 남기기
+    # 특수 문자(׀ؗۨ૑৉ 등)는 제거
+    cleaned = re.sub(r'[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣ\s.!?,;:\-\(\)\[\]\'"°%]', ' ', text)
+    
+    # 연속된 공백을 하나로 정리
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    
+    return cleaned.strip()
 
 
 def create_rag_service() -> RAGService:
@@ -253,7 +296,7 @@ def format_retrieved_content(content: List[str]) -> str:
     LLM 프롬프트에 포함할 수 있도록 검색된 RAG 내용을 포맷팅
     
     Args:
-        content: 검색된 텍스트 청크 목록
+        content: 검색된 텍스트 청크 목록 (각 청크는 이미 500토큰으로 생성됨)
         
     Returns:
         프롬프트 포함용으로 포맷팅된 문자열
@@ -263,11 +306,9 @@ def format_retrieved_content(content: List[str]) -> str:
     
     formatted_chunks = []
     for i, chunk in enumerate(content, 1):
-        # 프롬프트 팽창을 방지하기 위해 각 청크를 300자로 제한
-        truncated_chunk = chunk.strip()
-        if len(truncated_chunk) > 300:
-            truncated_chunk = truncated_chunk[:300] + "..."
-        
-        formatted_chunks.append(f"참고자료 {i}:\n{truncated_chunk}")
+        # 청크는 이미 적절한 크기(500토큰)로 생성되었으므로 전체를 사용
+        chunk_text = chunk.strip()
+        if chunk_text:
+            formatted_chunks.append(f"참고자료 {i}:\n{chunk_text}")
     
     return "\n\n".join(formatted_chunks)

@@ -195,6 +195,23 @@ class SequentialGradingEngine:
         
         logger.info(f"Starting sequential grading for {len(students)} students (batch: {self.current_batch_id})")
         
+        # --- 개선: 서술형 채점 시 RAG 인덱스를 한 번만 생성 (청크화 + 임베딩) ---
+        rag_service_instance = None
+        if grading_type == "descriptive" and uploaded_files:
+            try:
+                logger.info("Building RAG index once from uploaded files (chunking + embedding)...")
+                rag_service_instance = RAGService()
+                # process_documents: 토큰 기반 청크화(500) + 임베딩을 1회만 수행
+                success = rag_service_instance.process_documents(uploaded_files)
+                if success:
+                    logger.info("RAG index built successfully - ready for student queries")
+                else:
+                    logger.warning("RAG index creation failed - will use fallback per-student processing")
+                    rag_service_instance = None
+            except Exception as e:
+                logger.warning(f"RAG indexing error: {e} - will use fallback per-student processing")
+                rag_service_instance = None
+        
         results = []
         processing_times = []
         
@@ -222,7 +239,8 @@ class SequentialGradingEngine:
                     references=references,
                     groq_model_name=groq_model_name,
                     max_retries=max_retries,
-                    uploaded_files=uploaded_files  # Pass uploaded files for on-demand processing
+                    uploaded_files=uploaded_files,  # Fallback용으로 유지
+                    rag_service=rag_service_instance  # 사전 생성된 RAG 인스턴스 전달 (검색만 수행)
                 )
                 
                 # Always append result (even error results)
@@ -291,7 +309,8 @@ class SequentialGradingEngine:
         references: Optional[List[str]],
         max_retries: int,
         groq_model_name: str = "qwen/qwen3-32b",
-        uploaded_files: Optional[List] = None  # New parameter for on-demand RAG processing
+        uploaded_files: Optional[List] = None,  # Fallback용 파라미터 (기존 호환성 유지)
+        rag_service: Optional[RAGService] = None  # 사전 생성된 RAG 인스턴스 (검색만 수행)
     ) -> Optional[GradingResult]:
         """
         Grade a single student with retry mechanism.
@@ -304,7 +323,8 @@ class SequentialGradingEngine:
             references: Reference materials
             max_retries: Maximum retry attempts
             groq_model_name: Specific Groq model to use (default: qwen/qwen3-32b)
-            uploaded_files: Uploaded reference files for on-demand RAG processing
+            uploaded_files: Uploaded reference files for fallback on-demand RAG processing
+            rag_service: Pre-built RAG service instance (performs search only, no re-indexing)
             
         Returns:
             Grading result if successful, None if failed
@@ -323,22 +343,39 @@ class SequentialGradingEngine:
             try:
                 logger.info(f"Grading student {student.name} (attempt {attempt + 1}/{max_retries + 1})")
                 
-                # For descriptive grading with uploaded files, process documents on-demand
+                # --- 개선: 사전 생성된 RAG 인덱스에서 검색만 수행 (청크화/임베딩 재수행 안 함) ---
                 processed_references = references
-                if grading_type == "descriptive" and uploaded_files and student.has_text_answer:
-                    try:
-                        rag_service = RAGService()
-                        rag_result = rag_service.process_documents_for_student(
-                            uploaded_files, 
-                            student.answer
-                        )
-                        
-                        if rag_result.success:
-                            processed_references = rag_result.content
-                        else:
-                            logger.warning(f"RAG processing failed for student {student.name}: {rag_result.error_message}")
-                    except Exception as e:
-                        logger.warning(f"RAG processing error for student {student.name}: {e}")
+                if grading_type == "descriptive" and student.has_text_answer:
+                    if rag_service and rag_service.vector_store:
+                        # 사전 생성된 RAG 인덱스에서 검색만 수행 (효율적)
+                        try:
+                            logger.info(f"Searching RAG index for student {student.name} answer...")
+                            retrieved_chunks = rag_service.search_relevant_content(student.answer, k=3)
+                            if retrieved_chunks:
+                                # 청크 리스트를 그대로 전달 (문자열이 아닌 리스트로!)
+                                processed_references = retrieved_chunks
+                                logger.info(f"Found {len(retrieved_chunks)} relevant chunks for {student.name}")
+                            else:
+                                logger.warning(f"No relevant chunks found for {student.name}")
+                        except Exception as e:
+                            logger.warning(f"RAG search error for {student.name}: {e}")
+                    elif uploaded_files:
+                        # Fallback: 기존 방식 (per-student 인덱싱) - 호환성 유지
+                        try:
+                            logger.info(f"Using fallback per-student RAG processing for {student.name}")
+                            fallback_rag = RAGService()
+                            rag_result = fallback_rag.process_documents_for_student(
+                                uploaded_files, 
+                                student.answer
+                            )
+                            
+                            if rag_result.success:
+                                # rag_result.content는 이미 리스트 형태
+                                processed_references = rag_result.content
+                            else:
+                                logger.warning(f"Fallback RAG failed for {student.name}: {rag_result.error_message}")
+                        except Exception as e:
+                            logger.warning(f"Fallback RAG error for {student.name}: {e}")
                 
                 # Call LLM service for grading
                 result = self.llm_service.grade_student_sequential(
@@ -519,7 +556,8 @@ class SequentialGradingEngine:
                 references=references,
                 groq_model_name=groq_model_name,
                 max_retries=max_retries,
-                uploaded_files=uploaded_files  # Pass uploaded files for on-demand processing
+                uploaded_files=uploaded_files,  # Fallback용으로 유지
+                rag_service=None  # retry 시에는 RAG 인스턴스 없음 (fallback 사용)
             )
             
             if result:

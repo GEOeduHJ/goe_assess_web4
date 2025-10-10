@@ -179,11 +179,10 @@ class LLMService:
         if grading_type == GradingType.DESCRIPTIVE and references:
             prompt_parts.append("\n다음은 채점 참고 자료입니다:")
             for i, ref in enumerate(references, 1):
-                # Limit each reference chunk to 300 characters
+                # 청크 전체를 사용 (이미 500토큰으로 적절히 생성되어 있음)
                 clean_ref = ref.strip()
-                if len(clean_ref) > 300:
-                    clean_ref = clean_ref[:300] + "..."
-                prompt_parts.append(f"참고자료 {i}: {clean_ref}")
+                if clean_ref:
+                    prompt_parts.append(f"\n참고자료 {i}:\n{clean_ref}")
         
         # 3. Evaluation rubric
         prompt_parts.append("\n다음은 평가 루브릭입니다:")
@@ -215,7 +214,16 @@ class LLMService:
 중요: 반드시 위의 JSON 형식을 정확히 따라주세요. 각 평가요소에 대해 루브릭에 명시된 점수만 부여하세요.
 """)
         
-        return "\n".join(prompt_parts)
+        final_prompt = "\n".join(prompt_parts)
+        
+        # 🔍 프롬프트 전체 로깅 (디버깅용)
+        logger.info("="*80)
+        logger.info("생성된 프롬프트 전체 내용:")
+        logger.info("="*80)
+        logger.info(final_prompt)
+        logger.info("="*80)
+        
+        return final_prompt
     
     def _cleanup_cache(self):
         """Clean up internal caches to free memory."""
@@ -409,7 +417,13 @@ class LLMService:
             try:
                 # Use google-generativeai GenerativeModel with latest model
                 model = genai.GenerativeModel('gemini-2.5-flash')
-                response = model.generate_content(content)
+                
+                # Generation config with low temperature for consistent grading
+                generation_config = genai.types.GenerationConfig(
+                    temperature=0.1  # 채점 일관성을 위한 낮은 temperature
+                )
+                
+                response = model.generate_content(content, generation_config=generation_config)
                 
                 if response.text:
                     result = {"text": response.text}

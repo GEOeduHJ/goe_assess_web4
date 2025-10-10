@@ -41,7 +41,7 @@ source .venv/bin/activate
 
 ### 3. 의존성 설치
 ```bash
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 ```
 
 ### 4. 환경 변수 설정
