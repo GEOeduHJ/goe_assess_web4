@@ -95,24 +95,26 @@ class RubricUI:
         """Load a sample rubric for demonstration."""
         sample_rubric = Rubric(name="샘플 루브릭")
         
-        # Sample element 1: Content accuracy
-        content_element = EvaluationElement(name="내용 정확성")
-        content_element.add_criteria(score=5, description="모든 내용이 정확하고 완전함")
-        content_element.add_criteria(score=4, description="대부분의 내용이 정확함")
-        content_element.add_criteria(score=3, description="일부 내용이 정확함")
-        content_element.add_criteria(score=2, description="내용이 부분적으로 정확함")
-        content_element.add_criteria(score=1, description="내용이 대부분 부정확함")
-        content_element.add_criteria(score=0, description="내용이 완전히 부정확하거나 없음")
+        # Sample element 1: 기본 개념 확인
+        concept_element = EvaluationElement(name="기본 개념 확인")
+        concept_element.add_criteria(score=1, description="답으로 \"사막화\"를 정확하게 제시함")
+        concept_element.add_criteria(score=0, description="답으로 \"사막화\"가 아닌 \"열대우림파괴\" 또는 \"산성비\"를 제시함")
         
-        # Sample element 2: Explanation quality
-        explanation_element = EvaluationElement(name="설명의 질")
-        explanation_element.add_criteria(score=3, description="논리적이고 명확한 설명")
-        explanation_element.add_criteria(score=2, description="대체로 명확한 설명")
-        explanation_element.add_criteria(score=1, description="부분적으로 명확한 설명")
-        explanation_element.add_criteria(score=0, description="설명이 불명확하거나 없음")
+        # Sample element 2: 지리적 조건 제시
+        condition_element = EvaluationElement(name="지리적 조건 제시")
+        condition_element.add_criteria(score=2, description="\"사막화\"에 대한 판단 근거를 \"건조 기후\"와 함께 건조 기후가 나타나는 지리적 조건인 \"아열대 고압대\" 또는 \"대륙 내부\" 또는 \"한류\" 중 하나를 제시함")
+        condition_element.add_criteria(score=1, description="\"사막화\"에 대한 판단 근거로 \"건조 기후\"를 제시했으나, 건조 기후가 나타나는 지리적 조건인 \"아열대 고압대\" 또는 \"대륙 내부\" 또는 \"한류\" 중 하나를 제시하지 못함")
+        condition_element.add_criteria(score=0, description="\"사막화\"에 대한 판단 근거로 \"건조 기후\"를 제시하지 못하고, 건조 기후가 나타나는 지리적 조건도 제시하지 못함")
         
-        sample_rubric.add_element(content_element)
-        sample_rubric.add_element(explanation_element)
+        # Sample element 3: 심화 원인 제시
+        cause_element = EvaluationElement(name="심화 원인 제시")
+        cause_element.add_criteria(score=2, description="\"사막화\"가 심화되는 이유를 2가지 이상(기후변화로 인한 장기간 가뭄, 과도한 방목 등)을 제시함")
+        cause_element.add_criteria(score=1, description="\"사막화\"가 심화되는 이유를 1가지만 제시하거나, 이유를 2가지 이상 제시했으나 사막화와 관련이 있는 내용이 1가지밖에 없음")
+        cause_element.add_criteria(score=0, description="\"사막화\"가 심화되는 이유를 제시하지 못하거나, 사막화와 관련이 없는 내용을 제시함")
+        
+        sample_rubric.add_element(concept_element)
+        sample_rubric.add_element(condition_element)
+        sample_rubric.add_element(cause_element)
         st.session_state.rubric = sample_rubric
         
         # Also set rubric in grading session
