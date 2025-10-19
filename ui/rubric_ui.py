@@ -95,22 +95,26 @@ class RubricUI:
         """Load a sample rubric for demonstration."""
         sample_rubric = Rubric(name="샘플 루브릭")
         
-        # Sample element 1: 국가 내부적 관점
-        internal_element = EvaluationElement(name="국가 내부적 관점")
-        internal_element.add_criteria(score=3, description="문제 상황이 [자료]의 구체적인 근거를 토대로 제시되었으며, 실천 방안이 이 문제 상황을 해결하는 데 직접적이고 구체적으로 기여하며 논리적임")
-        internal_element.add_criteria(score=2, description="문제 상황이 [자료]의 내용을 포함하지만 구체성이 다소 미흡했거나, 실천 방안이 문제 해결에 기여하지만 구체성이 부족함")
-        internal_element.add_criteria(score=1, description="문제 상황이 일반적인 홍수 피해만 언급했으며, 실천 방안이 제시한 문제 상황과의 연관성이 낮음")
-        internal_element.add_criteria(score=0, description="문제 상황이 [자료]와 무관하거나, 실천 방안을 제시하지 않음")
+        # Sample element 1: 기본 개념 확인
+        concept_element = EvaluationElement(name="기본 개념 확인")
+        concept_element.add_criteria(score=1, description="답으로 \"사막화\"를 정확하게 제시함")
+        concept_element.add_criteria(score=0, description="답으로 \"사막화\"가 아닌 \"열대우림파괴\" 또는 \"산성비\"를 제시함")
         
-        # Sample element 2: 국가 간 협력 관점
-        cooperation_element = EvaluationElement(name="국가 간 협력 관점")
-        cooperation_element.add_criteria(score=3, description="문제 상황이 [자료]의 구체적인 근거를 토대로 제시되었으며, 실천 방안이 이 문제 상황을 해결하는 데 직접적이고 구체적으로 기여하며 논리적임")
-        cooperation_element.add_criteria(score=2, description="문제 상황이 [자료]의 내용을 포함하지만 구체성이 다소 미흡했거나, 실천 방안이 문제 해결에 기여하지만 구체성이 부족함")
-        cooperation_element.add_criteria(score=1, description="문제 상황이 일반적인 협력 부족만 언급했으며, 실천 방안이 제시한 문제 상황과의 연관성이 낮음")
-        cooperation_element.add_criteria(score=0, description="문제 상황이 [자료]와 무관하거나, 실천 방안을 제시하지 않음")
+        # Sample element 2: 지리적 조건 제시
+        condition_element = EvaluationElement(name="지리적 조건 제시")
+        condition_element.add_criteria(score=2, description="\"사막화\"에 대한 판단 근거를 \"건조 기후\"와 함께 건조 기후가 나타나는 지리적 조건인 \"아열대 고압대\" 또는 \"대륙 내부\" 또는 \"한류\" 중 하나를 제시함")
+        condition_element.add_criteria(score=1, description="\"사막화\"에 대한 판단 근거로 \"건조 기후\"를 제시했으나, 건조 기후가 나타나는 지리적 조건인 \"아열대 고압대\" 또는 \"대륙 내부\" 또는 \"한류\" 중 하나를 제시하지 못함")
+        condition_element.add_criteria(score=0, description="\"사막화\"에 대한 판단 근거로 \"건조 기후\"를 제시하지 못하고, 건조 기후가 나타나는 지리적 조건도 제시하지 못함")
         
-        sample_rubric.add_element(internal_element)
-        sample_rubric.add_element(cooperation_element)
+        # Sample element 3: 심화 원인 제시
+        cause_element = EvaluationElement(name="심화 원인 제시")
+        cause_element.add_criteria(score=2, description="\"사막화\"가 심화되는 이유를 2가지 이상(기후변화로 인한 장기간 가뭄, 과도한 방목 등)을 제시함")
+        cause_element.add_criteria(score=1, description="\"사막화\"가 심화되는 이유를 1가지만 제시하거나, 이유를 2가지 이상 제시했으나 사막화와 관련이 있는 내용이 1가지밖에 없음")
+        cause_element.add_criteria(score=0, description="\"사막화\"가 심화되는 이유를 제시하지 못하거나, 사막화와 관련이 없는 내용을 제시함")
+        
+        sample_rubric.add_element(concept_element)
+        sample_rubric.add_element(condition_element)
+        sample_rubric.add_element(cause_element)
         st.session_state.rubric = sample_rubric
         
         # Also set rubric in grading session
