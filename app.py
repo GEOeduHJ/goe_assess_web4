@@ -24,7 +24,7 @@ def main():
     
     # 메인 제목 표시
     st.title(config.APP_TITLE)
-    st.markdown("**AI 기반 지리과 자동 채점 시스템**")
+    st.markdown("**AI 기반 지리과 서답형 문항 유형별 자동 채점 시스템**")
     
     # API 키 설정 확인
     api_validation = config.validate_api_keys()

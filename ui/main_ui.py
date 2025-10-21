@@ -126,9 +126,9 @@ class MainUI:
         
         with col1:
             if st.button(
-                "📝 서술형 문항",
+                "📝 텍스트 문항",
                 key="descriptive_button",
-                help="텍스트 기반 서술형 답안을 채점합니다. 참고 자료를 활용한 RAG 기반 채점이 가능합니다.",
+                help="텍스트 기반 답안을 채점합니다. 참고 자료를 활용한 RAG 기반 채점이 가능합니다.",
                 use_container_width=True
             ):
                 self.handle_grading_type_selection(GradingType.DESCRIPTIVE)
@@ -144,7 +144,7 @@ class MainUI:
         
         # Display current selection
         if st.session_state.grading_type:
-            grading_type_name = "📝 서술형 문항" if st.session_state.grading_type == GradingType.DESCRIPTIVE.value else "🗺️ 백지도형 문항"
+            grading_type_name = "📝 텍스트 문항" if st.session_state.grading_type == GradingType.DESCRIPTIVE.value else "🗺️ 백지도형 문항"
             st.success(f"✅ 선택된 채점 유형: **{grading_type_name}**")
     
     def handle_grading_type_selection(self, grading_type: GradingType):
@@ -166,12 +166,12 @@ class MainUI:
         Implements Requirement 5.1
         """
         st.markdown("### 🤖 LLM 모델 선택")
-        st.markdown("서술형 문항 채점에 사용할 AI 모델을 선택해주세요.")
+        st.markdown("텍스트 문항 채점에 사용할 AI 모델을 선택해주세요.")
         
         model_options = {
             LLMModel.GEMINI.value: {
                 "name": "Google Gemini 2.5 Flash",
-                "description": "Google의 최신 멀티모달 AI 모델. 텍스트와 이미지 분석이 모두 가능합니다.",
+                "description": "Google의 최신 멀티모달 AI 모델. 텍스트와 이미지 문항 모두 분석 가능합니다.",
                 "icon": "🔥"
             },
             LLMModel.GROQ.value: {
@@ -199,8 +199,8 @@ class MainUI:
             if selected_model == LLMModel.GROQ.value:
                 st.markdown("#### 🧠 Groq 모델 상세 선택")
                 groq_model_options = {
-                    "qwen/qwen3-32b": "Qwen3 32B - 고품질 한국어 처리",
-                    "openai/gpt-oss-120b": "GPT-OSS 120B - 대규모 언어 모델"
+                    "qwen/qwen3-32b": "Qwen3 32B",
+                    "openai/gpt-oss-120b": "GPT-OSS 120B"
                 }
                 
                 selected_groq_model = st.selectbox(
@@ -267,7 +267,7 @@ class MainUI:
             **필수 열 구성:**
             - `학생 이름`: 학생의 이름
             - `반`: 학생의 반 정보
-            - `답안`: 학생이 작성한 서술형 답안
+            - `답안`: 학생이 작성한 답안
             
             **예시:**
             | 학생 이름 | 반 | 답안 |
@@ -412,7 +412,7 @@ class MainUI:
         
         # Grading type status
         if st.session_state.grading_type:
-            grading_type_name = "📝 서술형" if st.session_state.grading_type == GradingType.DESCRIPTIVE.value else "🗺️ 백지도형"
+            grading_type_name = "📝 텍스트" if st.session_state.grading_type == GradingType.DESCRIPTIVE.value else "🗺️ 백지도형"
             st.success(f"✅ 채점 유형: {grading_type_name}")
         else:
             st.error("❌ 채점 유형을 선택해주세요")
@@ -460,7 +460,7 @@ class MainUI:
             
             # 채점 유형에 따라 학생 데이터 처리
             if st.session_state.grading_type == GradingType.DESCRIPTIVE.value:
-                # 서술형 채점 파일 처리
+                # 텍스트 채점 파일 처리
                 student_file = st.session_state.uploaded_files.get('student_data')
                 if student_file:
                     # 업로드된 파일을 임시로 저장

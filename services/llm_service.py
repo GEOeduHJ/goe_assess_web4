@@ -171,13 +171,13 @@ class LLMService:
         
         # 1. System role definition
         if grading_type == GradingType.MAP:
-            prompt_parts.append("당신은 지리 교과목 전문 채점자입니다. 학생이 작성한 백지도 답안을 분석하여 채점해주세요.")
+            prompt_parts.append("① 시스템 역할(System role): 당신은 지리 교과 이미지 서답형 문항 전문 채점자입니다. 전달하는 학생의 이미지 답안을 아래 지시사항을 토대로 분석하여 채점해주세요.")
         else:
-            prompt_parts.append("당신은 지리 교과목 전문 채점자입니다. 학생의 서술형 답안을 분석하여 채점해주세요.")
+            prompt_parts.append("① 시스템 역할(System role): 당신은 지리 교과 텍스트 서답형 문항 전문 채점자입니다. 전달하는 학생의 텍스트 답안을 아래 지시사항과 자료를 토대로 분석하여 채점해주세요.")
         
         # 2. Reference materials (descriptive only)
         if grading_type == GradingType.DESCRIPTIVE and references:
-            prompt_parts.append("\n다음은 채점 참고 자료입니다:")
+            prompt_parts.append("\n③ 참고 자료(Reference materials): 다음은 채점 참고 자료입니다:")
             for i, ref in enumerate(references, 1):
                 # 청크 전체를 사용 (이미 500토큰으로 적절히 생성되어 있음)
                 clean_ref = ref.strip()
@@ -185,7 +185,7 @@ class LLMService:
                     prompt_parts.append(f"\n참고자료 {i}:\n{clean_ref}")
         
         # 3. Evaluation rubric
-        prompt_parts.append("\n다음은 평가 루브릭입니다:")
+        prompt_parts.append("\n④ 평가 루브릭(Evaluation rubric): 다음은 평가 루브릭입니다:")
         for element in rubric.elements:
             prompt_parts.append(f"\n평가요소: {element.name} (최대 {element.max_score}점)")
             for criteria in element.criteria:
@@ -193,13 +193,13 @@ class LLMService:
         
         # 4. Student answer
         if grading_type == GradingType.MAP:
-            prompt_parts.append("\n다음은 학생이 작성한 백지도 답안입니다. 이미지를 분석하여 채점해주세요.")
+            prompt_parts.append("\n② 학생 답안(Student answer): 다음은 학생이 작성한 백지도 답안입니다. 해당 이미지를 분석하여 1. 답안에 표기된 백지도가 어느 지역인지 파악하고 2. 제시된 평가 루브릭에 따라 학생이 백지도 위에 작성한 도형, 선, 화살표 등을 상세히 분석하고 3. 평가 기준 점수에 따라 학생 답안에 대한 점수를 부여하세요.")
         else:
-            prompt_parts.append(f"\n다음은 학생 답안입니다:\n{student_answer}")
+            prompt_parts.append(f"\n② 학생 답안(Student answer): 다음은 학생 답안입니다:\n{student_answer}")
         
         # 5. Output format specification
         prompt_parts.append(f"""
-다음 JSON 형식으로 채점 결과를 제공해주세요:
+⑤ 출력 포맷(Output format): 다음 JSON 형식으로 채점 결과를 제공해주세요:
 {{
   "scores": {{
     {', '.join([f'"{element.name}": 점수' for element in rubric.elements])}
@@ -211,7 +211,7 @@ class LLMService:
   "total_score": {rubric.total_max_score}
 }}
 
-중요: 반드시 위의 JSON 형식을 정확히 따라주세요. 각 평가요소에 대해 루브릭에 명시된 점수만 부여하세요.
+⑥ 주의사항(Cautions): 반드시 위의 JSON 형식을 정확히 따라주세요. 각 평가요소에 대해 루브릭에 명시된 점수만 부여하세요.
 """)
         
         final_prompt = "\n".join(prompt_parts)

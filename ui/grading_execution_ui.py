@@ -279,7 +279,7 @@ class GradingExecutionUI:
                 st.markdown("**평가 루브릭:**")
                 if session.rubric:
                     st.write(f"**루브릭명:** {session.rubric.name}")
-                    st.write(f"**총 만점:** {session.rubric.total_max_score}점")
+                    st.write(f"**총점:** {session.rubric.total_max_score}점")
                     
                     for element in session.rubric.elements:
                         st.write(f"- {element.name}: {element.max_score}점")
