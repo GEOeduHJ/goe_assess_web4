@@ -378,13 +378,18 @@ class SequentialGradingEngine:
                             logger.warning(f"Fallback RAG error for {student.name}: {e}")
                 
                 # Call LLM service for grading
+                # 세션에서 모범 답안 경로 가져오기
+                import streamlit as st
+                reference_image_path = st.session_state.get('reference_image_path') if hasattr(st, 'session_state') else None
+                
                 result = self.llm_service.grade_student_sequential(
                     student=student,
                     rubric=rubric,
                     model_type=model_type,
                     grading_type=grading_type,
                     references=processed_references,
-                    groq_model_name=groq_model_name
+                    groq_model_name=groq_model_name,
+                    reference_image_path=reference_image_path
                 )
                 
                 # Check if this is an error result (total_score = 0 and error message in feedback)

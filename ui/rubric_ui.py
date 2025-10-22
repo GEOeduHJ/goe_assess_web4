@@ -95,22 +95,19 @@ class RubricUI:
         """Load a sample rubric for demonstration."""
         sample_rubric = Rubric(name="예시 루브릭")
         
-        # Sample element 1: 국가 내부적 관점
-        internal_element = EvaluationElement(name="국가 내부적 관점")
-        internal_element.add_criteria(score=3, description="문제 상황이 [자료]의 구체적인 근거를 토대로 제시되었으며, 실천 방안이 이 문제 상황을 해결하는 데 직접적이고 구체적으로 기여하며 논리적임")
-        internal_element.add_criteria(score=2, description="문제 상황이 [자료]의 내용을 포함하지만 구체성이 다소 미흡했거나, 실천 방안이 문제 해결에 기여하지만 구체성이 부족함")
-        internal_element.add_criteria(score=1, description="문제 상황이 일반적인 홍수 피해만 언급했으며, 실천 방안이 제시한 문제 상황과의 연관성이 낮음")
-        internal_element.add_criteria(score=0, description="문제 상황이 [자료]와 무관하거나, 실천 방안을 제시하지 않음")
+        # Sample element 1: 계절풍
+        monsoon_element = EvaluationElement(name="계절풍")
+        monsoon_element.add_criteria(score=1, description="모범답안과 유사하게 계절풍의 이동 방향을 \"해양에서 대륙\"으로 지시하는 화살표로 정확하게 표시함")
+        monsoon_element.add_criteria(score=0, description="모범답안과 유사하게 계절풍의 이동 방향을 \"해양에서 대륙\"으로 지시하는 화살표로 정확하게 표시하지 못함")
         
-        # Sample element 2: 국가 간 협력 관점
-        cooperation_element = EvaluationElement(name="국가 간 협력 관점")
-        cooperation_element.add_criteria(score=3, description="문제 상황이 [자료]의 구체적인 근거를 토대로 제시되었으며, 실천 방안이 이 문제 상황을 해결하는 데 직접적이고 구체적으로 기여하며 논리적임")
-        cooperation_element.add_criteria(score=2, description="문제 상황이 [자료]의 내용을 포함하지만 구체성이 다소 미흡했거나, 실천 방안이 문제 해결에 기여하지만 구체성이 부족함")
-        cooperation_element.add_criteria(score=1, description="문제 상황이 일반적인 협력 부족만 언급했으며, 실천 방안이 제시한 문제 상황과의 연관성이 낮음")
-        cooperation_element.add_criteria(score=0, description="문제 상황이 [자료]와 무관하거나, 실천 방안을 제시하지 않음")
+        # Sample element 2: 히말라야산맥
+        himalaya_element = EvaluationElement(name="히말라야산맥")
+        himalaya_element.add_criteria(score=2, description="모범답안과 유사하게 히말라야 산맥이 위치한 인도 북부, 네팔 국경 일대를 중심으로 한 사각형으로 표시함")
+        himalaya_element.add_criteria(score=1, description="사각형이 히말라야 산맥 일대를 포함하지만, 모범답안과 다르게 사각형의 범위가 지나치게 많은 범위를 포함하거나 지나치게 작아 판단이 어려움")
+        himalaya_element.add_criteria(score=0, description="모범답안과 다르게 히말라야 산맥 일대를 사각형으로 표시하지 못함")
         
-        sample_rubric.add_element(internal_element)
-        sample_rubric.add_element(cooperation_element)
+        sample_rubric.add_element(monsoon_element)
+        sample_rubric.add_element(himalaya_element)
         st.session_state.rubric = sample_rubric
         
         # Also set rubric in grading session

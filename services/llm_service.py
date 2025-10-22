@@ -171,7 +171,13 @@ class LLMService:
         
         # 1. System role definition
         if grading_type == GradingType.MAP:
-            prompt_parts.append("① 시스템 역할(System role): 당신은 지리 교과 이미지 서답형 문항 전문 채점자입니다. 전달하는 학생의 이미지 답안을 아래 지시사항을 토대로 분석하여 채점해주세요.")
+            prompt_parts.append("""① 시스템 역할(System role): 당신은 지리 교과 이미지 서답형 문항 전문 채점자입니다. 
+
+② 참고 자료(모범 답안): 첫 번째로 전달되는 이미지는 문제의 모범 답안입니다. 
+이 모범 답안을 참고하여 학생 답안의 정확성을 평가하세요.
+
+③ 학생 답안(Student answer): 두 번째로 전달되는 이미지는 학생이 작성한 백지도 답안입니다. 
+모범 답안과 비교하여 도형, 선, 화살표, 위치 표시 등의 정확성을 평가하세요.""")
         else:
             prompt_parts.append("① 시스템 역할(System role): 당신은 지리 교과 텍스트 서답형 문항 전문 채점자입니다. 전달하는 학생의 텍스트 답안을 아래 지시사항과 자료를 토대로 분석하여 채점해주세요.")
         
@@ -207,7 +213,7 @@ class LLMService:
   "reasoning": {{
     {', '.join([f'"{element.name}": "점수 부여 근거"' for element in rubric.elements])}
   }},
-  "feedback": "학생을 위한 개선 피드백",
+  "feedback": "평가 루브릭에 따른 점수, 점수 부여 근거에 따른 전반적인 피드백과 학생 응답의 개선점 제시",
   "total_score": {rubric.total_max_score}
 }}
 
@@ -230,8 +236,43 @@ class LLMService:
         self.response_cache.clear()
         logger.info("LLM service cache cleaned up")
     
+    def _encode_image_part(self, image_path: str) -> Dict[str, Any]:
+        """
+        이미지 파일을 API용 파트로 인코딩합니다.
+        
+        Args:
+            image_path: 인코딩할 이미지 파일 경로
+            
+        Returns:
+            Dict containing 'mime_type' and 'data' for API call
+            
+        Raises:
+            Exception: If image file cannot be read
+        """
+        try:
+            with open(image_path, "rb") as f:
+                image_data = f.read()
+            
+            file_ext = Path(image_path).suffix.lower()
+            mime_type = {
+                '.jpg': 'image/jpeg', 
+                '.jpeg': 'image/jpeg', 
+                '.png': 'image/png', 
+                '.bmp': 'image/bmp',
+                '.tiff': 'image/tiff',
+                '.tif': 'image/tiff'
+            }.get(file_ext, 'image/jpeg')
+            
+            return {
+                'mime_type': mime_type,
+                'data': image_data
+            }
+        except Exception as e:
+            logger.error(f"Failed to encode image {image_path}: {e}")
+            raise Exception(f"이미지 파일을 읽을 수 없습니다: {image_path}")
+    
     def _generate_cache_key(self, prompt: str, image_path: Optional[str] = None) -> str:
-        """Generate cache key for API responses."""
+        """Generate cache key for API responses (backward compatibility)."""
         key_data = prompt
         if image_path:
             # Include image file hash for cache key
@@ -241,6 +282,45 @@ class LLMService:
                 key_data += f"_img_{image_hash}"
             except Exception:
                 key_data += f"_img_{image_path}"
+        
+        return hashlib.md5(key_data.encode()).hexdigest()
+    
+    def _generate_cache_key_v2(
+        self, 
+        prompt: str, 
+        reference_image_path: Optional[str] = None, 
+        student_image_path: Optional[str] = None
+    ) -> str:
+        """
+        두 이미지(모범 답안 + 학생 답안)를 포함한 캐시 키 생성.
+        
+        Args:
+            prompt: 프롬프트 텍스트
+            reference_image_path: 모범 답안 이미지 경로
+            student_image_path: 학생 답안 이미지 경로
+            
+        Returns:
+            MD5 해시 기반 캐시 키
+        """
+        key_data = prompt
+        
+        # 모범 답안 이미지 해시 추가
+        if reference_image_path:
+            try:
+                with open(reference_image_path, 'rb') as f:
+                    ref_hash = hashlib.md5(f.read()).hexdigest()[:8]
+                key_data += f"_ref_{ref_hash}"
+            except Exception:
+                key_data += f"_ref_{reference_image_path}"
+        
+        # 학생 답안 이미지 해시 추가
+        if student_image_path:
+            try:
+                with open(student_image_path, 'rb') as f:
+                    stu_hash = hashlib.md5(f.read()).hexdigest()[:8]
+                key_data += f"_stu_{stu_hash}"
+            except Exception:
+                key_data += f"_stu_{student_image_path}"
         
         return hashlib.md5(key_data.encode()).hexdigest()
     
@@ -328,6 +408,8 @@ class LLMService:
         self, 
         prompt: str, 
         image_path: Optional[str] = None,
+        reference_image_path: Optional[str] = None,  # 새로 추가: 모범 답안
+        student_image_path: Optional[str] = None,     # 새로 추가: 학생 답안
         max_retries: Optional[int] = None
     ) -> Dict[str, Any]:
         """
@@ -335,7 +417,9 @@ class LLMService:
         
         Args:
             prompt: Text prompt for the model
-            image_path: Optional path to image file
+            image_path: Optional path to image file (backward compatibility)
+            reference_image_path: Optional path to reference (model answer) image
+            student_image_path: Optional path to student answer image
             max_retries: Maximum number of retry attempts
             
         Returns:
@@ -353,8 +437,12 @@ class LLMService:
             )
             raise ValueError(error_info.user_message)
         
-        # Check cache first
-        cache_key = self._generate_cache_key(prompt, image_path)
+        # Backward compatibility: image_path를 student_image_path로 사용
+        if image_path and not student_image_path:
+            student_image_path = image_path
+        
+        # Check cache first (v2 cache key for multiple images)
+        cache_key = self._generate_cache_key_v2(prompt, reference_image_path, student_image_path)
         cached_response = self._get_cached_response(cache_key)
         if cached_response:
             logger.debug("Using cached Gemini API response")
@@ -364,54 +452,48 @@ class LLMService:
             # Prepare content for API call following official documentation
             # Reference: https://ai.google.dev/gemini-api/docs/vision
             
-            if image_path and Path(image_path).exists():
-                print(f"DEBUG: Adding image to Gemini API request: {image_path}")
+            content = [prompt]  # 프롬프트를 먼저 추가
+            
+            # 모범 답안 이미지 추가 (있는 경우)
+            if reference_image_path and Path(reference_image_path).exists():
+                print(f"DEBUG: Adding reference image to Gemini API request: {reference_image_path}")
                 try:
-                    # Read image file
-                    with open(image_path, "rb") as image_file:
-                        image_data = image_file.read()
-                    
-                    print(f"DEBUG: Successfully read image data: {len(image_data)} bytes")
-                    
-                    # Determine MIME type based on file extension
-                    file_ext = Path(image_path).suffix.lower()
-                    mime_type = {
-                        '.jpg': 'image/jpeg',
-                        '.jpeg': 'image/jpeg', 
-                        '.png': 'image/png',
-                        '.bmp': 'image/bmp',
-                        '.tiff': 'image/tiff'
-                    }.get(file_ext, 'image/jpeg')  # Default to jpeg
-                    
-                    print(f"DEBUG: Using MIME type: {mime_type} for file extension: {file_ext}")
-                    
-                    # Create image part using google-generativeai
-                    image_part = {
-                        'mime_type': mime_type,
-                        'data': image_data
-                    }
-                    
-                    # According to official docs: put text and image in same contents array
-                    content = [prompt, image_part]
-                    print(f"DEBUG: Created content with text and image")
-                    
+                    reference_part = self._encode_image_part(reference_image_path)
+                    content.append(reference_part)
+                    print(f"DEBUG: Successfully added reference image")
                 except Exception as e:
-                    print(f"DEBUG: Failed to read image: {e}")
+                    print(f"DEBUG: Failed to read reference image: {e}")
                     error_info = handle_error(
                         e,
                         ErrorType.FILE_PROCESSING,
-                        context=f"call_gemini_api: failed to read image {image_path}",
-                        user_context="이미지 파일 읽기"
+                        context=f"call_gemini_api: failed to read reference image {reference_image_path}",
+                        user_context="모범 답안 이미지 파일 읽기"
                     )
                     raise ValueError(error_info.user_message)
-            else:
-                print(f"DEBUG: No image provided or image file not found")
-                print(f"DEBUG: image_path: {image_path}")
-                if image_path:
-                    print(f"DEBUG: Path exists: {Path(image_path).exists()}")
-                
-                # Text only content
-                content = [prompt]
+            
+            # 학생 답안 이미지 추가 (있는 경우)
+            if student_image_path and Path(student_image_path).exists():
+                print(f"DEBUG: Adding student image to Gemini API request: {student_image_path}")
+                try:
+                    student_part = self._encode_image_part(student_image_path)
+                    content.append(student_part)
+                    print(f"DEBUG: Successfully added student image")
+                except Exception as e:
+                    print(f"DEBUG: Failed to read student image: {e}")
+                    error_info = handle_error(
+                        e,
+                        ErrorType.FILE_PROCESSING,
+                        context=f"call_gemini_api: failed to read student image {student_image_path}",
+                        user_context="학생 답안 이미지 파일 읽기"
+                    )
+                    raise ValueError(error_info.user_message)
+            
+            if len(content) == 1:  # 이미지가 없는 경우
+                print(f"DEBUG: No images provided or image files not found")
+                if reference_image_path:
+                    print(f"DEBUG: reference_image_path: {reference_image_path}, exists: {Path(reference_image_path).exists()}")
+                if student_image_path:
+                    print(f"DEBUG: student_image_path: {student_image_path}, exists: {Path(student_image_path).exists()}")
             
             # Generate response
             try:
@@ -727,7 +809,8 @@ class LLMService:
         model_type: str,
         grading_type: str,
         references: Optional[List[str]] = None,
-        groq_model_name: str = "qwen/qwen3-32b"
+        groq_model_name: str = "qwen/qwen3-32b",
+        reference_image_path: Optional[str] = None  # 새로 추가: 모범 답안 이미지 경로
     ) -> GradingResult:
         """
         Grade a single student's answer sequentially.
@@ -764,15 +847,21 @@ class LLMService:
                 print(f"DEBUG: Using Gemini API for student {student.name}")
                 print(f"DEBUG: Grading type: {grading_type}")
                 print(f"DEBUG: Student image_path: {student.image_path}")
+                print(f"DEBUG: Reference image_path: {reference_image_path}")
                 print(f"DEBUG: Image path to use: {image_path_to_use}")
                 if image_path_to_use:
-                    print(f"DEBUG: Image file exists: {Path(image_path_to_use).exists()}")
+                    print(f"DEBUG: Student image file exists: {Path(image_path_to_use).exists()}")
                     if Path(image_path_to_use).exists():
-                        print(f"DEBUG: Image file size: {Path(image_path_to_use).stat().st_size} bytes")
+                        print(f"DEBUG: Student image file size: {Path(image_path_to_use).stat().st_size} bytes")
+                if reference_image_path:
+                    print(f"DEBUG: Reference image file exists: {Path(reference_image_path).exists()}")
+                    if Path(reference_image_path).exists():
+                        print(f"DEBUG: Reference image file size: {Path(reference_image_path).stat().st_size} bytes")
                 
                 response = self.call_gemini_api(
                     prompt=prompt,
-                    image_path=image_path_to_use
+                    reference_image_path=reference_image_path,
+                    student_image_path=image_path_to_use
                 )
             else:  # GROQ
                 response = self.call_groq_api(prompt=prompt, model_name=groq_model_name)

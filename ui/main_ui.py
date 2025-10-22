@@ -88,6 +88,14 @@ class MainUI:
         # 처리하지 않고 업로드된 참고 파일들 저장
         if 'uploaded_reference_files' not in st.session_state:
             st.session_state.uploaded_reference_files = None
+        
+        # 모범 답안 이미지 경로 초기화 추가
+        if 'reference_image_path' not in st.session_state:
+            st.session_state.reference_image_path = None
+        
+        # 백지도형 채점을 위한 모범 답안 이미지 경로
+        if 'reference_image_path' not in st.session_state:
+            st.session_state.reference_image_path = None
     
     def render_main_page(self):
         """
@@ -291,6 +299,30 @@ class MainUI:
         """
         Render file upload section for map grading.
         """
+        # 모범 답안 업로드 섹션 추가
+        st.markdown("#### 📚 모범 답안 이미지")
+        st.markdown("*채점 기준이 될 모범 답안 이미지를 업로드하세요. 모든 학생 채점 시 동일하게 사용됩니다.*")
+        
+        reference_image_file = st.file_uploader(
+            "모범 답안 이미지:",
+            type=['jpg', 'jpeg', 'png', 'bmp'],
+            key="reference_image_uploader",
+            help="모든 학생 채점 시 비교 기준으로 사용될 모범 답안 이미지"
+        )
+        
+        if reference_image_file:
+            # 임시 파일로 저장
+            reference_path = self._save_uploaded_file(reference_image_file, "reference")
+            st.session_state.reference_image_path = reference_path
+            st.success("✅ 모범 답안 이미지가 업로드되었습니다!")
+            
+            # 미리보기 표시
+            st.image(reference_image_file, caption="업로드된 모범 답안", width=400)
+        else:
+            st.warning("⚠️ 백지도형 채점을 위해 모범 답안 이미지를 업로드해주세요.")
+        
+        st.markdown("---")
+        
         st.markdown("#### 📊 학생 정보 데이터")
         st.markdown("학생 이름과 반 정보가 포함된 Excel 파일을 업로드해주세요.")
         
@@ -398,9 +430,12 @@ class MainUI:
             return 'student_data' in st.session_state.uploaded_files
         
         elif st.session_state.grading_type == GradingType.MAP.value:
-            # For map: both student info and image files are required
-            return ('student_info' in st.session_state.uploaded_files and 
-                    'image_files' in st.session_state.uploaded_files)
+            # For map: student info, image files, AND reference image are all required
+            has_student_info = 'student_info' in st.session_state.uploaded_files
+            has_image_files = 'image_files' in st.session_state.uploaded_files
+            has_reference_image = st.session_state.get('reference_image_path') is not None
+            
+            return has_student_info and has_image_files and has_reference_image
         
         return False
     
@@ -438,6 +473,12 @@ class MainUI:
                 st.info("ℹ️ 참고 자료는 선택사항입니다")
         
         elif st.session_state.grading_type == GradingType.MAP.value:
+            # 모범 답안 이미지 상태 추가
+            if st.session_state.get('reference_image_path'):
+                st.success("✅ 모범 답안 이미지 업로드 완료")
+            else:
+                st.error("❌ 모범 답안 이미지를 업로드해주세요")
+            
             if 'student_info' in st.session_state.uploaded_files:
                 st.success("✅ 학생 정보 파일 업로드 완료")
             else:
@@ -500,6 +541,12 @@ class MainUI:
             
             elif st.session_state.grading_type == GradingType.MAP.value:
                 # Process map grading files
+                
+                # 모범 답안 체크 추가
+                if not st.session_state.get('reference_image_path'):
+                    st.error("❌ 백지도형 채점에는 모범 답안 이미지가 필요합니다. 파일 업로드 섹션에서 모범 답안을 업로드해주세요.")
+                    return
+                
                 student_info_file = st.session_state.uploaded_files.get('student_info')
                 image_files = st.session_state.uploaded_files.get('image_files')
                 
@@ -573,6 +620,34 @@ class MainUI:
                     except Exception as e:
                         print(f"DEBUG: Failed to clean up temp directory {temp_dir}: {e}")
             st.session_state.temp_directories = []
+    
+    def _save_uploaded_file(self, uploaded_file, prefix: str) -> str:
+        """
+        업로드된 파일을 임시 디렉토리에 저장합니다.
+        
+        Args:
+            uploaded_file: Streamlit의 UploadedFile 객체
+            prefix: 파일명 prefix (예: "reference", "student")
+            
+        Returns:
+            str: 저장된 파일의 절대 경로
+        """
+        import tempfile
+        import time
+        
+        # 임시 디렉토리 생성
+        temp_dir = os.path.join(tempfile.gettempdir(), "geo_assess_temp")
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # 파일 저장 (타임스탬프 추가로 중복 방지)
+        timestamp = str(int(time.time()))
+        file_path = os.path.join(temp_dir, f"{prefix}_{timestamp}_{uploaded_file.name}")
+        
+        with open(file_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        
+        print(f"DEBUG: Saved uploaded file to: {file_path}")
+        return file_path
 
 
 def create_main_ui() -> MainUI:
