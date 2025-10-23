@@ -240,7 +240,7 @@ class LLMService:
   "total_score": {rubric.total_max_score}
 }}
 
-⑥ 주의사항(Cautions): 반드시 위의 JSON 형식을 정확히 따라주세요. 각 평가요소에 대해 루브릭에 명시된 점수만 부여하세요.
+⑥ 주의사항(Cautions): 반드시 위의 JSON 형식을 정확히 따라주세요. 각 평가요소에 대해 루브릭에 명시된 점수만 부여하세요. 피드백 생성 시 학생 답안을 개선할 수 있는 구체적인 방안을 평가 루브릭, 점수 부여 근거에 따라 명확하게 제시하세요.
 """)
         
         final_prompt = "\n".join(prompt_parts)
