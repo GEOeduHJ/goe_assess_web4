@@ -256,7 +256,17 @@ class GradingExecutionUI:
             st.metric("채점 유형", grading_type_name)
         
         with col3:
-            model_name = "Gemini 2.5 Flash" if session.model_type == "gemini" else "Groq"
+            # Map model type to display name
+            if session.model_type == "gemini":
+                model_name = "Gemini 2.5 Flash"
+            elif session.model_type == "groq":
+                # Show specific Groq model name
+                groq_model = getattr(session, 'groq_model', 'qwen/qwen3-32b')
+                model_name = f"Groq ({groq_model})"
+            elif session.model_type == "gpt-5-mini":
+                model_name = "GPT-5 Mini"
+            else:
+                model_name = session.model_type
             st.metric("AI 모델", model_name)
         
         with col4:

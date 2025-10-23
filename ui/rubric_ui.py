@@ -94,26 +94,26 @@ class RubricUI:
     def load_sample_rubric(self):
         """Load a sample rubric for demonstration."""
         sample_rubric = Rubric(name="예시 루브릭")
-        
-        # Sample element 1: 계절풍
+
+        # 평가 요소 1: 계절풍
         monsoon_element = EvaluationElement(name="계절풍")
-        monsoon_element.add_criteria(score=1, description="모범답안과 유사하게 계절풍의 이동 방향을 \"해양에서 대륙\"으로 지시하는 화살표로 정확하게 표시함")
-        monsoon_element.add_criteria(score=0, description="모범답안과 유사하게 계절풍의 이동 방향을 \"해양에서 대륙\"으로 지시하는 화살표로 정확하게 표시하지 못함")
-        
-        # Sample element 2: 히말라야산맥
+        monsoon_element.add_criteria(score=1, description="계절풍의 이동 방향을 \"해양에서 대륙\"으로 지시하는 화살표로 정확하게 표시함")
+        monsoon_element.add_criteria(score=0, description="계절풍의 이동 방향을 \"해양에서 대륙\"으로 지시하는 화살표로 정확하게 표시하지 못함")
+
+        # 평가 요소 2: 히말라야산맥
         himalaya_element = EvaluationElement(name="히말라야산맥")
-        himalaya_element.add_criteria(score=2, description="모범답안과 유사하게 히말라야 산맥이 위치한 인도 북부, 네팔 국경 일대를 중심으로 한 사각형으로 표시함")
-        himalaya_element.add_criteria(score=1, description="사각형이 히말라야 산맥 일대를 포함하지만, 모범답안과 다르게 사각형의 범위가 지나치게 많은 범위를 포함하거나 지나치게 작아 판단이 어려움")
-        himalaya_element.add_criteria(score=0, description="모범답안과 다르게 히말라야 산맥 일대를 사각형으로 표시하지 못함")
-        
+        himalaya_element.add_criteria(score=2, description="히말라야 산맥이 위치한 인도 북부, 네팔 국경 일대를 중심으로 한 사각형으로 표시함")
+        himalaya_element.add_criteria(score=1, description="사각형이 히말라야 산맥 일대를 포함하지만, 사각형의 범위가 지나치게 많은 범위를 포함하거나 지나치게 작아 판단이 어려움")
+        himalaya_element.add_criteria(score=0, description="히말라야 산맥 일대를 사각형으로 표시하지 못함")
+
         sample_rubric.add_element(monsoon_element)
         sample_rubric.add_element(himalaya_element)
         st.session_state.rubric = sample_rubric
-        
+
         # Also set rubric in grading session
         if 'grading_session' in st.session_state:
             st.session_state.grading_session.rubric = sample_rubric
-        
+
         st.success("✅ 예시 루브릭을 불러왔습니다!")
     
     def render_evaluation_elements(self):

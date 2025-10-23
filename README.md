@@ -4,23 +4,29 @@
 
 Streamlit 웹 UI와 Google Gemini API를 활용하여 서술형 및 백지도형 답안을 자동으로 채점하고 상세한 피드백을 제공하는 교육용 플랫폼입니다.
 
+**2025년 10월 기준 주요 변경사항:**
+- Groq 모델 선택 기능은 UI에서 비활성화되어 사용자 선택 불가 (내부 로직은 유지)
+- OpenAI GPT-5 Mini 모델이 텍스트/이미지 문항 모두 지원됨
+
 ## ✨ 주요 기능
 
-### 🎯 채점 유형
-- **📝 서술형 문항**: RAG 기반 참고 자료 활용한 텍스트 답안 채점
-- **🗺️ 백지도형 문항**: 이미지 분석 기반 백지도 답안 채점
+### 🎯 지원 채점 유형
+- **텍스트 문항 자동 채점**: RAG 기반 참고 문서와 LLM을 활용한 텍스트 답안 평가
+- **백지도형 문항 자동 채점**: 이미지 업로드 및 AI 기반 지도 답안 평가, 참조 이미지 비교 지원
 
-### 📊 핵심 기능
-- **동적 루브릭 설정**: 웹 UI에서 평가 요소와 채점 기준 자유 설정
-- **실시간 채점 진행률**: 다중 학생 답안 순차 처리 및 진행 상황 실시간 표시
-- **상세 결과 분석**: 학생별 점수, 판단 근거, 개선 피드백 제공
-- **Excel 결과 내보내기**: 전체 채점 결과를 구조화된 Excel 파일로 내보내기
-- **RAG 시스템**: 참고 문서 기반 맥락적 채점 (서술형 전용)
+### 📊 실제 핵심 기능
+- **동적 루브릭 빌더**: UI에서 평가 요소/기준 직접 추가·수정, 샘플 루브릭 불러오기
+- **실시간 채점 진행률 표시**: 다중 학생 답안 순차 처리, 진행 상황 및 오류 자동 재시도
+- **상세 결과 분석 및 피드백**: 학생별 점수, 판단 근거, 개선 피드백, 등급 산출
+- **Excel 결과 내보내기**: 전체 채점 결과를 구조화된 Excel 파일로 다운로드
+- **참고 문서 기반 RAG 시스템**: PDF/DOCX 업로드, 벡터 임베딩 및 유사도 검색
+ - **이미지 분석 및 지도 문항 채점**: 백지도형 이미지 업로드, 참조 이미지 비교, AI 기반 지도 답안 평가
 
-### 🤖 AI 모델 지원
-- **Google Gemini 1.5 Flash**: 텍스트 및 이미지 분석
-- **Groq API**: 고속 텍스트 분석 (서술형 전용)
-- **KURE-v1 Embedding**: 한국어 특화 문서 임베딩
+### 🤖 실제 AI 모델 지원
+- **Google Gemini 2.5 Flash**: 텍스트/이미지 멀티모달 채점
+- **OpenAI GPT-5 Mini**: 텍스트/이미지 채점 (UI에서 선택 가능)
+- **Groq API**: 고속 텍스트 채점 (내부 로직만 유지, UI에서 선택 불가)
+- **KURE-v1 Embedding**: 한국어 문서 벡터 임베딩 및 검색
 
 ## 🚀 설치 및 실행
 
@@ -45,22 +51,17 @@ uv pip install -r requirements.txt
 ```
 
 ### 4. 환경 변수 설정
-`.env` 파일을 생성하고 API 키를 설정하세요:
+`.env` 또는 `.streamlit/secrets.toml` 파일에 아래와 같이 4가지 API 키를 반드시 입력해야 합니다. 
+이 파일은 외부(공개 저장소 등)에 절대 노출하지 마세요.
 
-```env
-# Google Gemini API
-GOOGLE_API_KEY=your_google_api_key_here
-
-# Groq API (선택사항)
-GROQ_API_KEY=your_groq_api_key_here
-
-# HuggingFace Token (선택사항)
-HF_TOKEN=your_huggingface_token_here
+```toml
+[api]
+google_api_key = "your_google_api_key_here"
+groq_api_key = "your_groq_api_key_here"
+openai_api_key = "your_openai_api_key_here"
+hf_token = "your_huggingface_token_here"
 ```
 
-**API 키 발급:**
-- **Google Gemini**: [Google AI Studio](https://aistudio.google.com/app/apikey)
-- **Groq**: [Groq Console](https://console.groq.com/keys)
 
 ### 5. 애플리케이션 실행
 ```bash
@@ -71,38 +72,35 @@ streamlit run app.py
 
 ```
 geo_assess_web4/
-├── app.py                  # 메인 애플리케이션 진입점
-├── config.py              # 설정 관리 및 환경변수 처리
-├── requirements.txt       # Python 의존성 목록
-├── pyproject.toml         # 프로젝트 메타데이터
-│
-├── ui/                    # Streamlit UI 컴포넌트
-│   ├── main_ui.py         # 메인 인터페이스 및 내비게이션
-│   ├── rubric_ui.py       # 루브릭 설정 UI
-│   ├── grading_execution_ui.py  # 채점 실행 및 진행률 UI
-│   └── results_ui.py      # 결과 표시 및 시각화 UI
-│
-├── services/              # 비즈니스 로직 서비스
-│   ├── llm_service.py     # LLM API 통합 (Gemini, Groq)
-│   ├── rag_service.py     # RAG 문서 처리 및 검색
-│   ├── grading_engine.py  # 순차 채점 엔진
-│   ├── file_service.py    # 파일 업로드 및 처리
-│   └── export_service.py  # Excel 결과 내보내기
-│
-├── models/                # 데이터 모델
-│   ├── student_model.py   # 학생 정보 모델
-│   ├── rubric_model.py    # 루브릭 및 평가 기준 모델
-│   └── result_model.py    # 채점 결과 모델
-│
-├── utils/                 # 유틸리티 함수
-│   ├── prompt_utils.py    # 프롬프트 생성 및 응답 파싱
-│   ├── embedding_utils.py # 임베딩 및 벡터 처리
-│   └── error_handler.py   # 통합 오류 처리
-│
-├── docs/                  # 문서화
-├── sample_data/          # 샘플 데이터 및 테스트 파일
-└── .streamlit/           # Streamlit 설정
-    └── secrets.toml      # 로컬 개발용 시크릿 (gitignore됨)
+├── app.py                  # 메인 Streamlit 앱 진입점
+├── config.py               # 환경 변수 및 설정 관리
+├── requirements.txt        # Python 의존성 목록
+├── pyproject.toml          # 프로젝트 메타데이터
+├── README.md               # 프로젝트 설명
+├── ui/                     # Streamlit UI 컴포넌트
+│   ├── main_ui.py          # 메인 인터페이스 및 내비게이션
+│   ├── rubric_ui.py        # 루브릭 설정 UI
+│   ├── grading_execution_ui.py # 채점 실행 및 진행률 UI
+│   ├── results_ui.py       # 결과 표시 및 시각화 UI
+│   └── __init__.py
+├── services/               # 비즈니스 로직 서비스
+│   ├── llm_service.py      # LLM API 통합 (Gemini, Groq, GPT-5-mini)
+│   ├── rag_service.py      # RAG 문서 처리 및 검색
+│   ├── grading_engine.py   # 순차 채점 엔진
+│   ├── file_service.py     # 파일 업로드 및 처리
+│   ├── export_service.py   # Excel 결과 내보내기
+│   └── __init__.py
+├── models/                 # 데이터 모델
+│   ├── student_model.py    # 학생 정보 모델
+│   ├── rubric_model.py     # 루브릭 및 평가 기준 모델
+│   ├── result_model.py     # 채점 결과 모델
+│   └── __init__.py
+├── utils/                  # 유틸리티 함수
+│   ├── prompt_utils.py     # 프롬프트 생성 및 응답 파싱
+│   ├── embedding_utils.py  # 임베딩 및 벡터 처리
+│   ├── error_handler.py    # 통합 오류 처리
+│   └── __init__.py
+└── sample_data/            # 샘플 데이터 및 테스트 파일
 ```
 
 ## 🛠️ 기술 스택
@@ -144,7 +142,8 @@ geo_assess_web4/
 - 각 요소별 채점 기준 및 점수 설정
 
 ### 4. 채점 실행
-- AI 모델 선택 (Gemini/Groq)
+- AI 모델 선택 (Gemini/GPT-5 Mini)
+- Groq 모델은 UI에서 선택 불가 (내부 로직만 유지)
 - 실시간 진행률 모니터링
 - 오류 발생시 자동 재시도
 
@@ -176,7 +175,7 @@ geo_assess_web4/
 ```toml
 [api]
 google_api_key = "your_google_api_key"
-groq_api_key = "your_groq_api_key"
+groq_api_key = "your_groq_api_key" # (내부 로직용, UI에서 선택 불가)
 ```
 
 ### 성능 최적화

@@ -112,9 +112,8 @@ class MainUI:
         if st.session_state.grading_type:
             st.markdown("---")
             
-            # Model selection (for descriptive type)
-            if st.session_state.grading_type == GradingType.DESCRIPTIVE.value:
-                self.render_model_selection_section()
+            # Model selection - show for both descriptive and map types
+            self.render_model_selection_section()
             
             # File upload section
             self.render_file_upload_section()
@@ -145,7 +144,7 @@ class MainUI:
             if st.button(
                 "🗺️ 백지도형 문항",
                 key="map_button", 
-                help="이미지 기반 백지도 답안을 채점합니다. Google Gemini의 이미지 분석 기능을 사용합니다.",
+                help="이미지 기반 백지도 답안을 채점합니다. Google Gemini 또는 OpenAI GPT-5-mini의 이미지 분석 기능을 사용합니다.",
                 use_container_width=True
             ):
                 self.handle_grading_type_selection(GradingType.MAP)
@@ -174,20 +173,47 @@ class MainUI:
         Implements Requirement 5.1
         """
         st.markdown("### 🤖 LLM 모델 선택")
-        st.markdown("텍스트 문항 채점에 사용할 AI 모델을 선택해주세요.")
         
-        model_options = {
-            LLMModel.GEMINI.value: {
-                "name": "Google Gemini 2.5 Flash",
-                "description": "Google의 최신 멀티모달 AI 모델. 텍스트와 이미지 문항 모두 분석 가능합니다.",
-                "icon": "🔥"
-            },
-            LLMModel.GROQ.value: {
-                "name": "Groq",
-                "description": "빠른 추론 속도를 제공하는 텍스트 전용 AI 모델입니다.",
-                "icon": "⚡"
+        # Display different messages based on grading type
+        if st.session_state.grading_type == GradingType.MAP.value:
+            st.markdown("백지도형 문항 채점에 사용할 AI 모델을 선택해주세요. (이미지 분석 가능 모델만 표시)")
+        else:
+            st.markdown("텍스트 문항 채점에 사용할 AI 모델을 선택해주세요.")
+        
+        # Filter models based on grading type
+        if st.session_state.grading_type == GradingType.MAP.value:
+            # For MAP type, show only multimodal models (Gemini and GPT-5-mini)
+            model_options = {
+                LLMModel.GEMINI.value: {
+                    "name": "Google Gemini 2.5 Flash",
+                    "description": "Google의 최신 멀티모달 AI 모델. 텍스트와 이미지 문항 모두 분석 가능합니다.",
+                    "icon": "🔥"
+                },
+                "gpt-5-mini": {
+                    "name": "OpenAI GPT-5 Mini",
+                    "description": "OpenAI의 최신 추론 모델. 텍스트와 이미지 문항 모두 분석 가능합니다.",
+                    "icon": "🤖"
+                }
             }
-        }
+        else:
+            # For DESCRIPTIVE type, show all models
+            model_options = {
+                LLMModel.GEMINI.value: {
+                    "name": "Google Gemini 2.5 Flash",
+                    "description": "Google의 최신 멀티모달 AI 모델. 텍스트와 이미지 문항 모두 분석 가능합니다.",
+                    "icon": "🔥"
+                },
+                # LLMModel.GROQ.value: {
+                #     "name": "Groq",
+                #     "description": "빠른 추론 속도를 제공하는 텍스트 전용 AI 모델입니다.",
+                #     "icon": "⚡"
+                # },
+                "gpt-5-mini": {
+                    "name": "OpenAI GPT-5 Mini",
+                    "description": "OpenAI의 최신 추론 모델. 텍스트와 이미지 문항 모두 분석 가능합니다.",
+                    "icon": "🤖"
+                }
+            }
         
         selected_model = st.radio(
             "모델 선택:",
@@ -452,13 +478,23 @@ class MainUI:
         else:
             st.error("❌ 채점 유형을 선택해주세요")
         
-        # Model selection status (for descriptive only)
-        if st.session_state.grading_type == GradingType.DESCRIPTIVE.value:
-            if st.session_state.selected_model:
-                model_name = "Google Gemini 2.5 Flash" if st.session_state.selected_model == LLMModel.GEMINI.value else "Groq"
-                st.success(f"✅ LLM 모델: {model_name}")
+        # Model selection status
+        if st.session_state.selected_model:
+            # Map model value to display name
+            if st.session_state.selected_model == LLMModel.GEMINI.value:
+                model_name = "Google Gemini 2.5 Flash"
+            elif st.session_state.selected_model == LLMModel.GROQ.value:
+                # Show specific Groq model name
+                groq_model = st.session_state.get('selected_groq_model', 'qwen/qwen3-32b')
+                model_name = f"Groq ({groq_model})"
+            elif st.session_state.selected_model == "gpt-5-mini":
+                model_name = "OpenAI GPT-5 Mini"
             else:
-                st.error("❌ LLM 모델을 선택해주세요")
+                model_name = st.session_state.selected_model
+            
+            st.success(f"✅ LLM 모델: {model_name}")
+        else:
+            st.error("❌ LLM 모델을 선택해주세요")
         
         # File upload status
         if st.session_state.grading_type == GradingType.DESCRIPTIVE.value:

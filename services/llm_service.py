@@ -31,6 +31,7 @@ groq._base_client.SyncHttpxClientWrapper.__init__ = patched_sync_httpx_client_wr
 
 import google.generativeai as genai
 from groq import Groq
+from openai import OpenAI  # 추가
 
 from config import config
 from models.student_model import Student
@@ -49,6 +50,7 @@ class LLMModelType:
     """LLM 모델 유형을 위한 열거형 클래스"""
     GEMINI = "gemini"
     GROQ = "groq"
+    GPT5_MINI = "gpt-5-mini"  # 추가
 
 
 class GradingType:
@@ -68,6 +70,7 @@ class LLMService:
     def __init__(self):
         """Initialize LLM service with API clients and performance optimization."""
         self.groq_client = None
+        self.openai_client = None  # 추가
         self._initialize_clients()
         
         # Performance optimization (removed as part of system monitoring cleanup)
@@ -102,6 +105,17 @@ class LLMService:
                     self.groq_client = None
             else:
                 logger.warning("Groq API key not found")
+            
+            # Initialize OpenAI (추가)
+            if config.OPENAI_API_KEY:
+                try:
+                    self.openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
+                    logger.info("OpenAI client initialized successfully")
+                except Exception as openai_error:
+                    logger.error(f"Failed to initialize OpenAI client: {openai_error}")
+                    self.openai_client = None
+            else:
+                logger.warning("OpenAI API key not found")
                 
         except Exception as e:
             logger.error(f"Failed to initialize LLM clients: {e}")
@@ -110,6 +124,8 @@ class LLMService:
                 logger.info("Gemini client not initialized due to missing API key")
             if self.groq_client is None:
                 logger.info("Groq client not initialized due to error")
+            if self.openai_client is None:
+                logger.info("OpenAI client not initialized due to error")
     
     def select_model(self, model_type: str, grading_type: str) -> str:
         """
@@ -125,10 +141,12 @@ class LLMService:
         Raises:
             ValueError: If invalid combination is requested
         """
-        # For map grading, only Gemini supports image analysis
+        # For map grading, only Gemini and GPT5_MINI support image analysis
         if grading_type == GradingType.MAP:
-            if not config.GOOGLE_API_KEY:
-                raise ValueError("Gemini API is required for map grading but not available")
+            if model_type == LLMModelType.GPT5_MINI and self.openai_client:
+                return LLMModelType.GPT5_MINI
+            elif not config.GOOGLE_API_KEY:
+                raise ValueError("Gemini or GPT-5-mini API is required for map grading but not available")
             return LLMModelType.GEMINI
         
         # For descriptive grading, allow user choice
@@ -137,11 +155,16 @@ class LLMService:
                 return LLMModelType.GEMINI
             elif model_type == LLMModelType.GROQ and self.groq_client:
                 return LLMModelType.GROQ
+            elif model_type == LLMModelType.GPT5_MINI and self.openai_client:
+                return LLMModelType.GPT5_MINI
             else:
                 # Fallback to available model
                 if config.GOOGLE_API_KEY:
                     return LLMModelType.GEMINI
                 elif self.groq_client:
+                    return LLMModelType.GROQ
+                elif self.openai_client:
+                    return LLMModelType.GPT5_MINI
                     return LLMModelType.GROQ
                 else:
                     raise ValueError("No LLM models available")
@@ -697,6 +720,141 @@ class LLMService:
             context="call_groq_api"
         )
     
+    def call_gpt5_mini_api(
+        self,
+        prompt: str,
+        reference_image_path: Optional[str] = None,
+        student_image_path: Optional[str] = None,
+        max_retries: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        Call OpenAI GPT-5-mini API for grading.
+        
+        Args:
+            prompt: Grading prompt
+            reference_image_path: Path to reference answer image (optional)
+            student_image_path: Path to student answer image (optional)
+            max_retries: Maximum number of retries
+            
+        Returns:
+            Dict with 'text' key containing the response
+        """
+        if not self.openai_client:
+            error_info = handle_error(
+                ValueError("OpenAI client not initialized"),
+                ErrorType.CONFIGURATION,
+                context="call_gpt5_mini_api: client not initialized",
+                user_context="OpenAI API 클라이언트 초기화"
+            )
+            raise Exception(error_info.user_message)
+        
+        def _make_api_call():
+            try:
+                # Build input content array
+                input_content = []
+                
+                # Add text prompt
+                input_content.append({
+                    "type": "input_text",
+                    "text": prompt
+                })
+                
+                # Add reference image if provided
+                if reference_image_path:
+                    try:
+                        reference_base64 = self._encode_image(reference_image_path)
+                        input_content.append({
+                            "type": "input_image",
+                            "image_url": f"data:image/jpeg;base64,{reference_base64}"
+                        })
+                    except Exception as e:
+                        error_info = handle_error(
+                            e,
+                            ErrorType.FILE_OPERATION,
+                            context="call_gpt5_mini_api: reference image encoding failed",
+                            user_context="모범 답안 이미지 인코딩"
+                        )
+                        raise Exception(error_info.user_message)
+                
+                # Add student image if provided
+                if student_image_path:
+                    try:
+                        student_base64 = self._encode_image(student_image_path)
+                        input_content.append({
+                            "type": "input_image",
+                            "image_url": f"data:image/jpeg;base64,{student_base64}"
+                        })
+                    except Exception as e:
+                        error_info = handle_error(
+                            e,
+                            ErrorType.FILE_OPERATION,
+                            context="call_gpt5_mini_api: student image encoding failed",
+                            user_context="학생 답안 이미지 인코딩"
+                        )
+                        raise Exception(error_info.user_message)
+                
+                # Call OpenAI API
+                response = self.openai_client.responses.create(
+                    model="gpt-5-mini",
+                    input=[{
+                        "role": "user",
+                        "content": input_content
+                    }],
+                    reasoning={"effort": "low"},
+                    text={"verbosity": "low"}
+                )
+                
+                return {"text": response.output_text}
+                
+            except Exception as e:
+                # Handle specific OpenAI errors
+                error_message = str(e)
+                
+                if "quota" in error_message.lower() or "insufficient_quota" in error_message.lower():
+                    error_info = handle_error(
+                        e,
+                        ErrorType.RATE_LIMIT,
+                        context="call_gpt5_mini_api: quota exceeded",
+                        user_context="OpenAI API 할당량 초과"
+                    )
+                    raise Exception(error_info.user_message)
+                
+                elif "timeout" in error_message.lower():
+                    error_info = handle_error(
+                        e,
+                        ErrorType.TIMEOUT,
+                        context="call_gpt5_mini_api: timeout",
+                        user_context="OpenAI API 시간 초과"
+                    )
+                    raise Exception(error_info.user_message)
+                
+                elif "authentication" in error_message.lower() or "unauthorized" in error_message.lower():
+                    error_info = handle_error(
+                        e,
+                        ErrorType.AUTHENTICATION,
+                        context="call_gpt5_mini_api: authentication failed",
+                        user_context="OpenAI API 인증"
+                    )
+                    raise Exception(error_info.user_message)
+                
+                else:
+                    error_info = handle_error(
+                        e,
+                        ErrorType.API_COMMUNICATION,
+                        context="call_gpt5_mini_api: general API error",
+                        user_context="OpenAI API 호출"
+                    )
+                    raise Exception(error_info.user_message)
+        
+        # Use retry mechanism with exponential backoff
+        max_retries = max_retries or config.MAX_RETRIES
+        return retry_with_backoff(
+            _make_api_call,
+            ErrorType.API_COMMUNICATION,
+            max_retries=max_retries,
+            context="call_gpt5_mini_api"
+        )
+    
     def parse_response(self, response_text: str, rubric: Rubric) -> Dict[str, Any]:
         """
         Parse and validate LLM response.
@@ -859,6 +1017,19 @@ class LLMService:
                         print(f"DEBUG: Reference image file size: {Path(reference_image_path).stat().st_size} bytes")
                 
                 response = self.call_gemini_api(
+                    prompt=prompt,
+                    reference_image_path=reference_image_path,
+                    student_image_path=image_path_to_use
+                )
+            elif selected_model == LLMModelType.GPT5_MINI:
+                image_path_to_use = student.image_path if grading_type == GradingType.MAP else None
+                print(f"DEBUG: Using GPT-5-mini API for student {student.name}")
+                print(f"DEBUG: Grading type: {grading_type}")
+                print(f"DEBUG: Student image_path: {student.image_path}")
+                print(f"DEBUG: Reference image_path: {reference_image_path}")
+                print(f"DEBUG: Image path to use: {image_path_to_use}")
+                
+                response = self.call_gpt5_mini_api(
                     prompt=prompt,
                     reference_image_path=reference_image_path,
                     student_image_path=image_path_to_use

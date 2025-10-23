@@ -39,6 +39,7 @@ class Config:
     # API 키
     GOOGLE_API_KEY: Optional[str] = get_config_value("GOOGLE_API_KEY")
     GROQ_API_KEY: Optional[str] = get_config_value("GROQ_API_KEY")
+    OPENAI_API_KEY: Optional[str] = get_config_value("OPENAI_API_KEY")  # 추가
     HF_TOKEN: Optional[str] = get_config_value("HF_TOKEN")
     
     # 애플리케이션 설정
