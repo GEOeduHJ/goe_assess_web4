@@ -103,28 +103,6 @@ geo_assess_web4/
 └── sample_data/            # 샘플 데이터 및 테스트 파일
 ```
 
-## 🛠️ 기술 스택
-
-### Frontend
-
-### Frontend
-- **Streamlit**: 메인 웹 UI 및 사용자 인터페이스
-- **Plotly**: 채점 결과 및 통계 시각화
-
-### Backend & AI
-- **Google Gemini API**: 텍스트/이미지 자동 채점 (멀티모달)
-- **OpenAI GPT-5 Mini**: 텍스트/이미지 자동 채점
-- **Groq API**: 고속 텍스트 채점 (내부 로직)
-- **KURE-v1 Embedding**: 한국어 문서 임베딩 및 벡터 검색
-- **LangChain**: RAG 파이프라인 및 문서 검색
-- **FAISS**: 벡터 유사도 검색
-
-### Data Processing
-- **Pandas**: 학생/채점 데이터 처리 및 통계
-- **OpenPyXL**: 학생 답안 및 결과 Excel 파일 처리
-- **PyPDF2**: 참고 문서 PDF 처리
-- **python-docx**: 참고 문서 DOCX 처리
-
 ## 🎯 사용법
 
 ### 1. 메인 설정/채점 유형 및 파일 업로드 (메인 페이지)
@@ -176,24 +154,5 @@ geo_assess_web4/
 - 요소별 성과 분석
 - 채점 시간 통계
 - 등급별 학생 수
-
-## 🤝 기여하기
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 라이선스
-
-이 프로젝트는 MIT 라이선스 하에 배포됩니다.
-
-## 🙋‍♂️ 지원
-
-- **이슈 리포트**: [GitHub Issues](https://github.com/GEOeduHJ/goe_assess_web4/issues)
-- **기능 요청**: [GitHub Discussions](https://github.com/GEOeduHJ/goe_assess_web4/discussions)
-
----
 
 **Made with ❤️ for Geography Education**
