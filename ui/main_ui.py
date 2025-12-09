@@ -172,11 +172,11 @@ class MainUI:
         Render LLM model selection section with detailed options.
         Implements Requirement 5.1
         """
-        st.markdown("### 🤖 LLM 모델 선택")
+        st.markdown("### 🧠 LLM 모델 선택")
         
         # Display different messages based on grading type
         if st.session_state.grading_type == GradingType.MAP.value:
-            st.markdown("백지도형 문항 채점에 사용할 AI 모델을 선택해주세요. (이미지 분석 가능 모델만 표시)")
+            st.markdown("백지도형 문항 채점에 사용할 AI 모델을 선택해주세요.")
         else:
             st.markdown("텍스트 문항 채점에 사용할 AI 모델을 선택해주세요.")
         
@@ -192,7 +192,7 @@ class MainUI:
                 "gpt-5-mini": {
                     "name": "OpenAI GPT-5 Mini",
                     "description": "OpenAI의 최신 추론 모델. 텍스트와 이미지 문항 모두 분석 가능합니다.",
-                    "icon": "🤖"
+                    "icon": "⚡"
                 }
             }
         else:
@@ -211,7 +211,7 @@ class MainUI:
                 "gpt-5-mini": {
                     "name": "OpenAI GPT-5 Mini",
                     "description": "OpenAI의 최신 추론 모델. 텍스트와 이미지 문항 모두 분석 가능합니다.",
-                    "icon": "🤖"
+                    "icon": "⚡"
                 }
             }
         

@@ -61,7 +61,7 @@ class ErrorHandler:
         """Initialize error handler with logging configuration."""
         self.logger = logging.getLogger(__name__)
         self.error_history: List[ErrorInfo] = []
-        self.retry_delays = [1, 2, 4, 8, 16]  # Exponential backoff delays
+        self.retry_delays = [60, 60, 60, 60, 60]  # 1분(60초) 간격으로 재시도
         
         # Configure logging if not already configured
         if not self.logger.handlers:

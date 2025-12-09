@@ -95,16 +95,17 @@ class RubricUI:
         """Load a sample rubric for demonstration."""
         sample_rubric = Rubric(name="예시 루브릭")
 
-        # 평가 요소 1: 계절풍
+        # 평가요소 1: 계절풍
         monsoon_element = EvaluationElement(name="계절풍")
-        monsoon_element.add_criteria(score=1, description="계절풍의 이동 방향을 \"해양에서 대륙\"으로 지시하는 화살표로 정확하게 표시함")
-        monsoon_element.add_criteria(score=0, description="계절풍의 이동 방향을 \"해양에서 대륙\"으로 지시하는 화살표로 정확하게 표시하지 못함")
+        monsoon_element.add_criteria(score=2, description="모범 답안과 유사하게 남서 계절풍의 방향을 화살표의 시작점을 인도양(남서쪽 해양)에, 끝점(화살촉)을 남아시아 대륙(북동쪽 육지)에 표시함. 화살표의 방향각이 북동 방향(극좌표 기준 0°~90° 범위)으로 정확히 표시하여 남서 계절풍의 이동 경로(인도양 → 대륙)를 정확하게 표현함.")
+        monsoon_element.add_criteria(score=1, description="모범 답안과 유사하게 화살표의 시작점과 끝점이 해양에서 대륙으로 향하는 것은 정확하나, 화살표의 방향각을 북쪽 또는 북서 방향(극좌표 기준 90°~180° 범위)으로 표시함(해당 예시: 정남풍(정북 방향) 또는 동남풍(북서 방향)으로 표시한 경우). 계절풍의 일반적 흐름은 이해했으나 세부 방향이 부정확함.")
+        monsoon_element.add_criteria(score=0, description="모범 답안과 다르게 화살표의 방향각을 남서~남동 방향(극좌표 기준 180°~360° 범위)으로 표시함(해당 예시: 북풍(남쪽 방향), 북동풍(남서 방향), 북서풍(남동 방향) 등). 대륙에서 해양으로 향하는 역방향 화살표 또는 대륙 북부에서 대륙 남부로 향하는 화살표로 표시함. 계절풍의 기본적인 이동 방향을 잘못 이해한 경우.")
 
-        # 평가 요소 2: 히말라야산맥
+        # 평가요소 2: 히말라야산맥
         himalaya_element = EvaluationElement(name="히말라야산맥")
-        himalaya_element.add_criteria(score=2, description="히말라야 산맥이 위치한 인도 북부, 네팔 국경 일대를 중심으로 한 사각형으로 표시함")
-        himalaya_element.add_criteria(score=1, description="사각형이 히말라야 산맥 일대를 포함하지만, 사각형의 범위가 지나치게 많은 범위를 포함하거나 지나치게 작아 판단이 어려움")
-        himalaya_element.add_criteria(score=0, description="히말라야 산맥 일대를 사각형으로 표시하지 못함")
+        himalaya_element.add_criteria(score=2, description="모범 답안과 비교하여 산맥의 위치와 범위가 지리적으로 유사함. 파키스탄 북부~인도 북부~네팔~부탄에 걸친 동서 방향 산맥을 티베트 고원과 인도 아대륙 사이로 한정하여 사각형으로 핵심 구간을 정확하게 표시함.")
+        himalaya_element.add_criteria(score=1, description="히말라야 산맥의 핵심 구간을 포함하나, 표시 범위가 지나치게 넓어 티베트 고원 내륙이나 인도 평원 깊숙이까지 포함함. 또는 사각형이 아닌 다른 도형(타원, 곡선, 실선 등)으로 표시했으나 히말라야 산맥의 지리적 위치를 정확하게 나타낸 경우. 산맥의 동서 방향성은 정확하나 세부 범위 판정이 애매한 경우.")
+        himalaya_element.add_criteria(score=0, description="히말라야 산맥의 실제 위치와 완전히 다른 곳에 표시하여 산맥 범위를 전혀 포함하지 못함(인도 내륙 평원, 티베트 고원 중앙부, 중국 동부 지역 등). 또는 산맥의 위치를 남북 방향으로 잘못 표시하여 지리적으로 부정확함. 또는 도형을 그리지 않았거나 판독 불가능한 경우.")
 
         sample_rubric.add_element(monsoon_element)
         sample_rubric.add_element(himalaya_element)

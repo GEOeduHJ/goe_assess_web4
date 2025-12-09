@@ -525,7 +525,7 @@ class LLMService:
                 
                 # Generation config with low temperature for consistent grading
                 generation_config = genai.types.GenerationConfig(
-                    temperature=0.1  # 채점 일관성을 위한 낮은 temperature
+                    temperature=1  # 채점 일관성을 위한 낮은 temperature
                 )
                 
                 response = model.generate_content(content, generation_config=generation_config)
@@ -800,7 +800,7 @@ class LLMService:
                         "role": "user",
                         "content": input_content
                     }],
-                    reasoning={"effort": "low"},
+                    reasoning={"effort": "medium"},
                     text={"verbosity": "low"}
                 )
                 
