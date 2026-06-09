@@ -17,7 +17,7 @@
 | 데이터 처리 | `pandas`, `openpyxl` | Excel 파싱 및 구조화된 학생 답안 로딩 |
 | 생성형 AI | `google-generativeai`, `openai` | LLM 기반 서술형 및 이미지(멀티모달) 채점 |
 | RAG 및 임베딩 | `sentence-transformers`, `faiss-cpu`, `langchain-community` | 문서 분할, 임베딩 생성, 벡터 검색(선택적) |
-| 문서 파싱 | `pypdf2`, `python-docx` | PDF / DOCX 참고자료 텍스트 추출 |
+| 문서 파싱 | `pypdf`, `python-docx` | PDF / DOCX 참고자료 텍스트 추출 |
 | 시각화 | `plotly` | 결과 통계, 분포, 분석 대시보드 그래프 |
 | 환경/설정 | `python-dotenv` | .env 기반 API 키 로딩 |
 | 품질/테스트 | `pytest` | 단위 및 회귀 테스트 (dev 그룹) |
@@ -157,7 +157,7 @@
 ### 3.4 RAG 참조 삽입 전략
 | 단계 | 처리 내용 |
 |------|-----------|
-| 1 | 업로드 문서 텍스트 추출(PDF→PyPDF2, DOCX→python-docx) |
+| 1 | 업로드 문서 텍스트 추출(PDF→pypdf, DOCX→python-docx) |
 | 2 | 문서 → 문장/청크 분할 (`CHUNK_SIZE`, `CHUNK_OVERLAP`) |
 | 3 | SentenceTransformer 임베딩 생성 및 정규화 |
 | 4 | 학생 답안 임베딩과 코사인 유사도 계산 → Top-K 추출 (`TOP_K_RETRIEVAL`) |

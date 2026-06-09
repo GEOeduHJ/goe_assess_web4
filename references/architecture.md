@@ -213,7 +213,7 @@ flowchart TD
 flowchart TD
     START[참고 문서 업로드] --> FILE_CHECK{파일 형식}
     
-    FILE_CHECK -->|PDF| PDF_EXTRACT[PyPDF2로 텍스트 추출]
+    FILE_CHECK -->|PDF| PDF_EXTRACT[pypdf로 텍스트 추출]
     FILE_CHECK -->|DOCX| DOCX_EXTRACT[python-docx로 텍스트 추출]
     FILE_CHECK -->|기타| ERROR[지원하지 않는 형식]
     
@@ -393,7 +393,7 @@ flowchart TD
 - **LLM**: Gemini 2.5 Flash (멀티모달), OpenAI GPT-5 Mini
 - **RAG**: FAISS + 설정 기반 HuggingFace 임베딩 모델
 - **Data 처리**: Pandas, OpenPyXL
-- **문서 처리**: PyPDF2, python-docx
+- **문서 처리**: pypdf, python-docx
 
 ### 📊 **데이터 흐름**
 1. 업로드된 참고 문서 → 300자/50자겹침 청킹 → 임베딩 → FAISS 인덱스
@@ -512,7 +512,7 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     U[업로드 파일] --> EXT{PDF/DOCX?}
-    EXT -->|PDF| P[PyPDF2 추출]
+    EXT -->|PDF| P[pypdf 추출]
     EXT -->|DOCX| D[python-docx 추출]
     EXT -->|기타| IGN[무시]
     P --> CLEAN[Strip]

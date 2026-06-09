@@ -44,6 +44,7 @@ class Config:
     # 애플리케이션 설정
     APP_TITLE: str = get_config_value("APP_TITLE", "자동 채점 플랫폼")
     MAX_FILE_SIZE_MB: int = int(get_config_value("MAX_FILE_SIZE_MB", "100"))
+    GEMINI_MODEL: str = get_config_value("GEMINI_MODEL", "gemini-2.5-flash")
     EMBEDDING_MODEL: str = get_config_value("EMBEDDING_MODEL", "nlpai-lab/KURE-v1")
     FAISS_INDEX_TYPE: str = get_config_value("FAISS_INDEX_TYPE", "IndexFlatIP")
     

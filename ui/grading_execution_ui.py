@@ -105,7 +105,7 @@ class GradingExecutionUI:
     def __init__(self):
         """Initialize the grading execution UI with performance optimization."""
         self.initialize_session_state()
-        self.grading_engine = None
+        self.grading_engine = st.session_state.get('grading_engine')
         
         # Use session state to maintain queue instances across UI refreshes
         if 'progress_queue' not in st.session_state:
@@ -128,9 +128,12 @@ class GradingExecutionUI:
             'grading_progress': None,
             'student_results': [],  # Initialize as empty list
             'grading_thread': None,
+            'grading_engine': None,
             'show_detailed_progress': False,
             'grading_errors': [],
-            'error_recovery_options': {}
+            'error_recovery_options': {},
+            'grading_completed': False,
+            'completed_count': 0,
         }
         
         for var_name, default_value in session_vars.items():
@@ -670,6 +673,7 @@ class GradingExecutionUI:
         try:
             # Initialize grading engine
             self.grading_engine = SequentialGradingEngine()
+            st.session_state.grading_engine = self.grading_engine
             
             # Set up callbacks
             self.grading_engine.set_progress_callback(self.on_progress_update)
@@ -700,13 +704,16 @@ class GradingExecutionUI:
                 for warning in validation['warnings']:
                     st.warning(f"- {warning}")
             
-            # Clear previous errors but preserve results if this is a retry
-            st.session_state.grading_errors = []
-            # Only clear results if starting fresh (not retrying)
-            if not st.session_state.get('student_results'):
-                st.session_state.student_results = []
-            # Reset progress for new grading session
+            # Fresh run state. Retry uses retry_failed_students(), not this entrypoint.
+            st.session_state.student_results = []
             st.session_state.grading_progress = None
+            st.session_state.grading_errors = []
+            st.session_state.grading_completed = False
+            st.session_state.completed_count = 0
+            st.session_state.progress_queue = queue.Queue()
+            st.session_state.result_queue = queue.Queue()
+            self.progress_queue = st.session_state.progress_queue
+            self.result_queue = st.session_state.result_queue
             
             # Start grading in background thread
             session.is_active = True
@@ -737,8 +744,9 @@ class GradingExecutionUI:
     def run_grading_thread(self, session: GradingSession):
         """Run grading in background thread with comprehensive error handling."""
         try:
-            if self.grading_engine:
-                results = self.grading_engine.grade_students_sequential(
+            engine = self.grading_engine
+            if engine:
+                results = engine.grade_students_sequential(
                     students=session.students,
                     rubric=session.rubric,
                     model_type=session.model_type,
@@ -778,8 +786,9 @@ class GradingExecutionUI:
         session = st.session_state.grading_session
         session.is_paused = True
         
-        if self.grading_engine:
-            self.grading_engine.cancel_grading()
+        engine = st.session_state.get('grading_engine') or self.grading_engine
+        if engine:
+            engine.cancel_grading()
         
         st.warning("⏸️ 현재 학생 채점 완료 후 배치를 정지합니다.")
     
@@ -789,22 +798,25 @@ class GradingExecutionUI:
         session.is_active = False
         session.is_paused = False
         
-        if self.grading_engine:
-            self.grading_engine.cancel_grading()
+        engine = st.session_state.get('grading_engine') or self.grading_engine
+        if engine:
+            engine.cancel_grading()
         
         st.error("⏹️ 채점이 중단되었습니다.")
         st.rerun()
     
     def retry_failed_students(self):
         """Retry grading for failed students."""
-        if not self.grading_engine:
+        engine = st.session_state.get('grading_engine') or self.grading_engine
+        if not engine:
             st.error("채점 엔진이 초기화되지 않았습니다.")
             return
+        self.grading_engine = engine
         
         session = st.session_state.grading_session
         
         try:
-            new_results = self.grading_engine.retry_failed_students(
+            new_results = engine.retry_failed_students(
                 rubric=session.rubric,
                 model_type=session.model_type,
                 grading_type=session.grading_type,
@@ -813,8 +825,8 @@ class GradingExecutionUI:
                 reference_image_path=session.reference_image_path
             )
             
-            # Add new results to session
-            st.session_state.student_results.extend(new_results)
+            for result in new_results:
+                self._upsert_student_result(result)
             
             st.success(f"🔄 {len(new_results)}명의 학생이 추가로 채점되었습니다.")
             st.rerun()
@@ -948,9 +960,7 @@ class GradingExecutionUI:
                 update_type, data = self.result_queue.get_nowait()
                 if update_type == 'result':
                     # Safely update session state in main thread
-                    if 'student_results' not in st.session_state:
-                        st.session_state.student_results = []
-                    st.session_state.student_results.append(data)
+                    self._upsert_student_result(data)
                     print(f"DEBUG: Added result for {data.student_name}, total results: {len(st.session_state.student_results)}")
                     should_rerun = True
         except queue.Empty:
@@ -970,6 +980,20 @@ class GradingExecutionUI:
         # Only rerun once if any updates occurred
         if should_rerun:
             st.rerun()
+
+    def _upsert_student_result(self, result: GradingResult):
+        """Insert or replace a student result by stable student identity."""
+        if 'student_results' not in st.session_state:
+            st.session_state.student_results = []
+
+        result_key = (result.student_name, result.student_class_number)
+        for index, existing in enumerate(st.session_state.student_results):
+            existing_key = (existing.student_name, existing.student_class_number)
+            if existing_key == result_key:
+                st.session_state.student_results[index] = result
+                return
+
+        st.session_state.student_results.append(result)
 
     def _cleanup_temp_directories(self):
         """Clean up temporary directories after grading completion."""

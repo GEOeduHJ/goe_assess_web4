@@ -9,7 +9,7 @@ from typing import List, Dict, Optional, Tuple, Any
 from pathlib import Path
 import pandas as pd
 import docx
-from PyPDF2 import PdfReader
+from pypdf import PdfReader
 from models.student_model import Student
 from utils.error_handler import handle_error, ErrorType, ErrorInfo
 

@@ -16,10 +16,12 @@ from functools import lru_cache
 import hashlib
 import inspect
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from openai import OpenAI
 
 from config import config
+from models.grading_response_model import GradeResponse, normalize_raw_response, validate_against_rubric
 from models.student_model import Student
 from models.rubric_model import Rubric
 from models.result_model import GradingResult, ElementScore, GradingTimer
@@ -54,6 +56,7 @@ class LLMService:
     
     def __init__(self):
         """Initialize LLM service with API clients and performance optimization."""
+        self.gemini_client = None
         self.openai_client = None
         self._initialize_clients()
         
@@ -69,8 +72,7 @@ class LLMService:
         try:
             # Initialize Google Gemini
             if config.GOOGLE_API_KEY:
-                # Configure the API key for google-generativeai
-                genai.configure(api_key=config.GOOGLE_API_KEY)
+                self.gemini_client = genai.Client(api_key=config.GOOGLE_API_KEY)
                 logger.info("Google Gemini client initialized successfully")
             else:
                 logger.warning("Google API key not found")
@@ -89,8 +91,8 @@ class LLMService:
         except Exception as e:
             logger.error(f"Failed to initialize LLM clients: {e}")
             # Log initialization status
-            if not config.GOOGLE_API_KEY:
-                logger.info("Gemini client not initialized due to missing API key")
+            if self.gemini_client is None:
+                logger.info("Gemini client not initialized due to missing API key or initialization error")
             if self.openai_client is None:
                 logger.info("OpenAI client not initialized due to error")
     
@@ -181,17 +183,13 @@ class LLMService:
         prompt_parts.append(f"""
 ⑤ 출력 포맷(Output format): 다음 JSON 형식으로 채점 결과를 제공해주세요:
 {{
-  "scores": {{
-    {', '.join([f'"{element.name}": 점수' for element in rubric.elements])}
-  }},
-  "reasoning": {{
-    {', '.join([f'"{element.name}": "점수 부여 근거"' for element in rubric.elements])}
-  }},
-  "feedback": "평가 루브릭에 따른 점수, 점수 부여 근거에 따른 전반적인 피드백과 학생 응답의 개선점 제시",
-  "total_score": {rubric.total_max_score}
+  "elements": [
+    {{"element_name": "평가요소명", "score": 점수, "reasoning": "점수 부여 근거"}}
+  ],
+  "feedback": "평가 루브릭에 따른 전반적인 피드백과 학생 응답의 개선점 제시"
 }}
 
-⑥ 주의사항(Cautions): 반드시 위의 JSON 형식을 정확히 따라주세요. 각 평가요소에 대해 루브릭에 명시된 점수만 부여하세요. 피드백 생성 시 학생 답안을 개선할 수 있는 구체적인 방안을 평가 루브릭, 점수 부여 근거에 따라 명확하게 제시하세요.
+⑥ 주의사항(Cautions): 반드시 위의 JSON 형식을 정확히 따라주세요. 모든 평가요소를 elements 배열에 한 번씩 포함하고, element_name은 루브릭의 평가요소명과 정확히 일치해야 합니다. 각 평가요소에 대해 루브릭에 명시된 점수만 부여하세요. total_score는 출력하지 마세요.
 """)
         
         final_prompt = "\n".join(prompt_parts)
@@ -210,15 +208,26 @@ class LLMService:
         self.response_cache.clear()
         logger.info("LLM service cache cleaned up")
     
-    def _encode_image_part(self, image_path: str) -> Dict[str, Any]:
+    def _get_image_mime_type(self, image_path: str) -> str:
+        file_ext = Path(image_path).suffix.lower()
+        return {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.bmp': 'image/bmp',
+            '.tiff': 'image/tiff',
+            '.tif': 'image/tiff',
+        }.get(file_ext, 'image/jpeg')
+
+    def _encode_image_part(self, image_path: str) -> types.Part:
         """
-        이미지 파일을 API용 파트로 인코딩합니다.
+        이미지 파일을 Google GenAI SDK용 Part로 인코딩합니다.
         
         Args:
             image_path: 인코딩할 이미지 파일 경로
             
         Returns:
-            Dict containing 'mime_type' and 'data' for API call
+            types.Part containing mime_type and bytes data
             
         Raises:
             Exception: If image file cannot be read
@@ -226,21 +235,11 @@ class LLMService:
         try:
             with open(image_path, "rb") as f:
                 image_data = f.read()
-            
-            file_ext = Path(image_path).suffix.lower()
-            mime_type = {
-                '.jpg': 'image/jpeg', 
-                '.jpeg': 'image/jpeg', 
-                '.png': 'image/png', 
-                '.bmp': 'image/bmp',
-                '.tiff': 'image/tiff',
-                '.tif': 'image/tiff'
-            }.get(file_ext, 'image/jpeg')
-            
-            return {
-                'mime_type': mime_type,
-                'data': image_data
-            }
+
+            return types.Part.from_bytes(
+                data=image_data,
+                mime_type=self._get_image_mime_type(image_path),
+            )
         except Exception as e:
             logger.error(f"Failed to encode image {image_path}: {e}")
             raise Exception(f"이미지 파일을 읽을 수 없습니다: {image_path}")
@@ -402,7 +401,7 @@ class LLMService:
         Raises:
             Exception: If API call fails after retries
         """
-        if not config.GOOGLE_API_KEY:
+        if not self.gemini_client:
             error_info = handle_error(
                 ValueError("Gemini client not initialized"),
                 ErrorType.AUTHENTICATION,
@@ -426,14 +425,14 @@ class LLMService:
             # Prepare content for API call following official documentation
             # Reference: https://ai.google.dev/gemini-api/docs/vision
             
-            content = [prompt]  # 프롬프트를 먼저 추가
+            contents = [prompt]  # 프롬프트를 먼저 추가
             
             # 모범 답안 이미지 추가 (있는 경우)
             if reference_image_path and Path(reference_image_path).exists():
                 print(f"DEBUG: Adding reference image to Gemini API request: {reference_image_path}")
                 try:
                     reference_part = self._encode_image_part(reference_image_path)
-                    content.append(reference_part)
+                    contents.append(reference_part)
                     print(f"DEBUG: Successfully added reference image")
                 except Exception as e:
                     print(f"DEBUG: Failed to read reference image: {e}")
@@ -450,7 +449,7 @@ class LLMService:
                 print(f"DEBUG: Adding student image to Gemini API request: {student_image_path}")
                 try:
                     student_part = self._encode_image_part(student_image_path)
-                    content.append(student_part)
+                    contents.append(student_part)
                     print(f"DEBUG: Successfully added student image")
                 except Exception as e:
                     print(f"DEBUG: Failed to read student image: {e}")
@@ -462,7 +461,7 @@ class LLMService:
                     )
                     raise ValueError(error_info.user_message)
             
-            if len(content) == 1:  # 이미지가 없는 경우
+            if len(contents) == 1:  # 이미지가 없는 경우
                 print(f"DEBUG: No images provided or image files not found")
                 if reference_image_path:
                     print(f"DEBUG: reference_image_path: {reference_image_path}, exists: {Path(reference_image_path).exists()}")
@@ -471,16 +470,15 @@ class LLMService:
             
             # Generate response
             try:
-                # Use google-generativeai GenerativeModel with latest model
-                model = genai.GenerativeModel('gemini-2.5-flash')
-                
-                # Generation config with low temperature for consistent grading
-                generation_config = genai.types.GenerationConfig(
-                    temperature=0.1,
-                    response_mime_type="application/json"
+                response = self.gemini_client.models.generate_content(
+                    model=config.GEMINI_MODEL,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        temperature=0.0,
+                        response_mime_type="application/json",
+                        response_schema=GradeResponse,
+                    ),
                 )
-                
-                response = model.generate_content(content, generation_config=generation_config)
                 
                 if response.text:
                     result = {"text": response.text}
@@ -561,7 +559,7 @@ class LLMService:
         if not self.openai_client:
             error_info = handle_error(
                 ValueError("OpenAI client not initialized"),
-                ErrorType.CONFIGURATION,
+                ErrorType.AUTHENTICATION,
                 context="call_gpt5_mini_api: client not initialized",
                 user_context="OpenAI API 클라이언트 초기화"
             )
@@ -595,7 +593,7 @@ class LLMService:
                     except Exception as e:
                         error_info = handle_error(
                             e,
-                            ErrorType.FILE_OPERATION,
+                            ErrorType.FILE_PROCESSING,
                             context="call_gpt5_mini_api: reference image encoding failed",
                             user_context="모범 답안 이미지 인코딩"
                         )
@@ -612,7 +610,7 @@ class LLMService:
                     except Exception as e:
                         error_info = handle_error(
                             e,
-                            ErrorType.FILE_OPERATION,
+                            ErrorType.FILE_PROCESSING,
                             context="call_gpt5_mini_api: student image encoding failed",
                             user_context="학생 답안 이미지 인코딩"
                         )
@@ -653,7 +651,7 @@ class LLMService:
                 elif "timeout" in error_message.lower():
                     error_info = handle_error(
                         e,
-                        ErrorType.TIMEOUT,
+                        ErrorType.NETWORK,
                         context="call_gpt5_mini_api: timeout",
                         user_context="OpenAI API 시간 초과"
                     )
@@ -716,53 +714,8 @@ class LLMService:
                 )
                 raise ValueError(error_info.user_message)
             
-            # Validate required fields
-            required_fields = ['scores', 'reasoning', 'feedback', 'total_score']
-            missing_fields = [field for field in required_fields if field not in parsed]
-            if missing_fields:
-                error_info = handle_error(
-                    ValueError(f"Missing required fields: {missing_fields}"),
-                    ErrorType.PARSING,
-                    context=f"parse_response: missing fields {missing_fields}",
-                    user_context="AI 응답 필드 검증"
-                )
-                raise ValueError(error_info.user_message)
-            
-            # Validate scores against rubric
-            for element in rubric.elements:
-                element_name = element.name
-                if element_name not in parsed['scores']:
-                    error_info = handle_error(
-                        ValueError(f"Missing score for element: {element_name}"),
-                        ErrorType.PARSING,
-                        context=f"parse_response: missing score for {element_name}",
-                        user_context="평가 요소 점수 검증"
-                    )
-                    raise ValueError(error_info.user_message)
-                
-                score = parsed['scores'][element_name]
-                if not isinstance(score, (int, float)):
-                    error_info = handle_error(
-                        ValueError(f"Invalid score type for {element_name}: {type(score)}"),
-                        ErrorType.PARSING,
-                        context=f"parse_response: invalid score type {type(score)} for {element_name}",
-                        user_context="점수 형식 검증"
-                    )
-                    raise ValueError(error_info.user_message)
-                
-                # Check if score is valid according to rubric
-                valid_scores = [criteria.score for criteria in element.criteria]
-                if score not in valid_scores:
-                    logger.warning(f"Score {score} for {element_name} not in rubric: {valid_scores}")
-                    # Don't raise error for this, just log warning
-            
-            # Validate reasoning - add default if missing
-            for element in rubric.elements:
-                element_name = element.name
-                if element_name not in parsed['reasoning']:
-                    parsed['reasoning'][element_name] = "채점 근거가 제공되지 않았습니다."
-            
-            return parsed
+            structured = normalize_raw_response(parsed)
+            return validate_against_rubric(structured, rubric)
             
         except ValueError:
             # Re-raise ValueError with error info already handled
@@ -825,6 +778,7 @@ class LLMService:
         """
         timer = GradingTimer()
         timer.start()
+        original_answer = student.answer if grading_type == GradingType.DESCRIPTIVE else (student.image_path or "")
         
         try:
             # Select appropriate model
@@ -886,8 +840,10 @@ class LLMService:
             result = GradingResult(
                 student_name=student.name,
                 student_class_number=student.class_number,
+                original_answer=original_answer,
                 grading_time_seconds=elapsed_time,
-                overall_feedback=parsed_result["feedback"]
+                overall_feedback=parsed_result["feedback"],
+                status="success",
             )
             
             # Add element scores
@@ -916,8 +872,11 @@ class LLMService:
             result = GradingResult(
                 student_name=student.name,
                 student_class_number=student.class_number,
+                original_answer=original_answer,
                 grading_time_seconds=elapsed_time,
-                overall_feedback=f"채점 중 오류가 발생했습니다: {str(e)}"
+                overall_feedback=f"채점 중 오류가 발생했습니다: {str(e)}",
+                status="failed",
+                error_message=str(e),
             )
             
             # Add zero scores for all elements
@@ -995,7 +954,7 @@ class LLMService:
             Dictionary with API availability status
         """
         return {
-            "gemini": bool(config.GOOGLE_API_KEY),
+            "gemini": self.gemini_client is not None,
             "gpt-5-mini": self.openai_client is not None
         }
     
