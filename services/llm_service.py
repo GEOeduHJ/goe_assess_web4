@@ -26,6 +26,28 @@ from models.student_model import Student
 from models.rubric_model import Rubric
 from models.result_model import GradingResult, ElementScore, GradingTimer
 from utils.error_handler import handle_error, retry_with_backoff, ErrorType, ErrorInfo
+
+# Gemini API는 additionalProperties 필드를 지원하지 않으므로
+# Pydantic 모델 대신 types.Schema로 응답 스키마를 직접 정의
+_GEMINI_GRADE_SCHEMA = types.Schema(
+    type="OBJECT",
+    properties={
+        "elements": types.Schema(
+            type="ARRAY",
+            items=types.Schema(
+                type="OBJECT",
+                properties={
+                    "element_name": types.Schema(type="STRING"),
+                    "score": types.Schema(type="INTEGER"),
+                    "reasoning": types.Schema(type="STRING"),
+                },
+                required=["element_name", "score", "reasoning"],
+            ),
+        ),
+        "feedback": types.Schema(type="STRING"),
+    },
+    required=["elements", "feedback"],
+)
 # 시스템 모니터링 정리의 일환으로 성능 최적화 import 제거
 
 
@@ -476,7 +498,7 @@ class LLMService:
                     config=types.GenerateContentConfig(
                         temperature=0.0,
                         response_mime_type="application/json",
-                        response_schema=GradeResponse,
+                        response_schema=_GEMINI_GRADE_SCHEMA,
                     ),
                 )
                 

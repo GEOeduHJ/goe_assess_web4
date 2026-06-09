@@ -61,7 +61,7 @@ def main():
     if 'student_results' not in st.session_state:
         st.session_state.student_results = []
     
-    if 'grading_session' not in st.session_state:
+    if st.session_state.get('grading_session') is None:
         from ui.grading_execution_ui import GradingSession
         st.session_state.grading_session = GradingSession(
             students=[], 

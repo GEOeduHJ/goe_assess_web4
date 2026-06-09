@@ -19,11 +19,14 @@ class RubricUI:
     
     def initialize_session_state(self):
         """루브릭 데이터를 위한 Streamlit 세션 상태를 초기화합니다."""
-        if 'rubric' not in st.session_state:
+        if not isinstance(st.session_state.get('rubric'), Rubric):
             st.session_state.rubric = Rubric(name="새 루브릭")
-        
+
         if 'rubric_validation_errors' not in st.session_state:
             st.session_state.rubric_validation_errors = []
+
+        if 'rubric_uploader_key' not in st.session_state:
+            st.session_state.rubric_uploader_key = 0
     
     def render_rubric_builder(self):
         """
@@ -51,18 +54,20 @@ class RubricUI:
     def render_rubric_management_buttons(self):
         """Render buttons for rubric management operations."""
         col1, col2, col3, col4 = st.columns(4)
-        
+
         with col1:
             if st.button("🆕 새 루브릭", help="새로운 루브릭을 생성합니다"):
                 st.session_state.rubric = Rubric(name="새 루브릭")
                 st.session_state.rubric_validation_errors = []
+                st.session_state.rubric_uploader_key += 1  # 파일 업로더 초기화
                 st.rerun()
-        
+
         with col2:
             if st.button("📁 예시 불러오기", help="예시 루브릭을 불러옵니다"):
                 self.load_sample_rubric()
+                st.session_state.rubric_uploader_key += 1  # 파일 업로더 초기화
                 st.rerun()
-        
+
         with col3:
             if st.session_state.rubric.elements:
                 rubric_json = json.dumps(st.session_state.rubric.to_dict(), ensure_ascii=False, indent=2)
@@ -73,19 +78,21 @@ class RubricUI:
                     mime="application/json",
                     help="현재 루브릭을 JSON 파일로 저장합니다"
                 )
-        
+
         with col4:
             uploaded_rubric = st.file_uploader(
                 "📂 루브릭 불러오기",
                 type=['json'],
-                key="rubric_upload",
+                key=f"rubric_upload_{st.session_state.rubric_uploader_key}",
                 help="저장된 루브릭 JSON 파일을 불러옵니다"
             )
-            
-            if uploaded_rubric:
+
+            if uploaded_rubric is not None:
                 try:
                     rubric_data = json.load(uploaded_rubric)
                     st.session_state.rubric = Rubric.from_dict(rubric_data)
+                    # 키를 증가시켜 다음 리런에서 파일 업로더가 초기화되도록 함 (무한 루프 방지)
+                    st.session_state.rubric_uploader_key += 1
                     st.success("✅ 루브릭이 성공적으로 불러와졌습니다!")
                     st.rerun()
                 except Exception as e:
@@ -112,7 +119,7 @@ class RubricUI:
         st.session_state.rubric = sample_rubric
 
         # Also set rubric in grading session
-        if 'grading_session' in st.session_state:
+        if st.session_state.get('grading_session') is not None:
             st.session_state.grading_session.rubric = sample_rubric
 
         st.success("✅ 예시 루브릭을 불러왔습니다!")
@@ -361,7 +368,7 @@ class RubricUI:
                     st.session_state.rubric_data = st.session_state.rubric.to_dict()
                     
                     # Set rubric in grading session
-                    if 'grading_session' in st.session_state:
+                    if st.session_state.get('grading_session') is not None:
                         st.session_state.grading_session.rubric = st.session_state.rubric
                     
                     st.success("✅ 루브릭이 저장되었습니다! 이제 채점 준비가 완료되었습니다.")
