@@ -16,7 +16,7 @@ from models.student_model import Student
 from models.rubric_model import Rubric
 from models.result_model import GradingResult, GradingTimer
 from services.llm_service import LLMService, GradingType
-from services.rag_service import RAGService, format_retrieved_content
+from services.rag_service import RAGService
 from config import config
 
 
@@ -165,9 +165,9 @@ class SequentialGradingEngine:
         model_type: str,
         grading_type: str,
         references: Optional[List[str]] = None,
-        groq_model_name: str = "qwen/qwen3-32b",
         max_retries: Optional[int] = None,
-        uploaded_files: Optional[List] = None  # New parameter for on-demand RAG processing
+        uploaded_files: Optional[List] = None,
+        reference_image_path: Optional[str] = None
     ) -> List[GradingResult]:
         """
         Grade multiple students sequentially with comprehensive progress tracking.
@@ -178,9 +178,9 @@ class SequentialGradingEngine:
             model_type: LLM model to use
             grading_type: Type of grading (descriptive/map)
             references: Reference materials from RAG
-            groq_model_name: Specific Groq model to use (default: qwen/qwen3-32b)
             max_retries: Maximum retry attempts per student
             uploaded_files: Uploaded reference files for on-demand RAG processing
+            reference_image_path: Path to reference answer image for map grading
             
         Returns:
             List of grading results
@@ -237,10 +237,10 @@ class SequentialGradingEngine:
                     model_type=model_type,
                     grading_type=grading_type,
                     references=references,
-                    groq_model_name=groq_model_name,
                     max_retries=max_retries,
                     uploaded_files=uploaded_files,  # Fallback용으로 유지
-                    rag_service=rag_service_instance  # 사전 생성된 RAG 인스턴스 전달 (검색만 수행)
+                    rag_service=rag_service_instance,  # 사전 생성된 RAG 인스턴스 전달 (검색만 수행)
+                    reference_image_path=reference_image_path
                 )
                 
                 # Always append result (even error results)
@@ -254,6 +254,13 @@ class SequentialGradingEngine:
                     else:
                         self.progress.failed_students += 1
                 else:
+                    failed_result = self._create_failed_result(
+                        student,
+                        rubric,
+                        "알 수 없는 오류로 채점 결과가 생성되지 않았습니다."
+                    )
+                    student_status.result = failed_result
+                    results.append(failed_result)
                     self.progress.failed_students += 1
                 
                 # Update time estimates
@@ -299,6 +306,27 @@ class SequentialGradingEngine:
             StudentGradingStatus(student=student)
             for student in students
         ]
+
+    def _create_failed_result(self, student: Student, rubric: Rubric, error_message: str) -> GradingResult:
+        """최종 실패 학생도 결과 목록과 export에 남기기 위한 오류 결과를 생성합니다."""
+        result = GradingResult(
+            student_name=student.name,
+            student_class_number=student.class_number,
+            original_answer=student.answer or student.image_path or "",
+            grading_time_seconds=0.0,
+            overall_feedback=f"채점 중 오류가 발생했습니다: {error_message}"
+        )
+
+        for element in rubric.elements:
+            result.add_element_score(
+                element_name=element.name,
+                score=0,
+                max_score=element.max_score,
+                feedback="채점 오류로 인해 점수를 부여할 수 없습니다.",
+                reasoning="최대 재시도 후에도 채점 처리 실패"
+            )
+
+        return result
     
     def _grade_student_with_retries(
         self,
@@ -308,9 +336,9 @@ class SequentialGradingEngine:
         grading_type: str,
         references: Optional[List[str]],
         max_retries: int,
-        groq_model_name: str = "qwen/qwen3-32b",
         uploaded_files: Optional[List] = None,  # Fallback용 파라미터 (기존 호환성 유지)
-        rag_service: Optional[RAGService] = None  # 사전 생성된 RAG 인스턴스 (검색만 수행)
+        rag_service: Optional[RAGService] = None,  # 사전 생성된 RAG 인스턴스 (검색만 수행)
+        reference_image_path: Optional[str] = None
     ) -> Optional[GradingResult]:
         """
         Grade a single student with retry mechanism.
@@ -322,9 +350,9 @@ class SequentialGradingEngine:
             grading_type: Type of grading
             references: Reference materials
             max_retries: Maximum retry attempts
-            groq_model_name: Specific Groq model to use (default: qwen/qwen3-32b)
             uploaded_files: Uploaded reference files for fallback on-demand RAG processing
             rag_service: Pre-built RAG service instance (performs search only, no re-indexing)
+            reference_image_path: Path to reference answer image for map grading
             
         Returns:
             Grading result if successful, None if failed
@@ -350,7 +378,7 @@ class SequentialGradingEngine:
                         # 사전 생성된 RAG 인덱스에서 검색만 수행 (효율적)
                         try:
                             logger.info(f"Searching RAG index for student {student.name} answer...")
-                            retrieved_chunks = rag_service.search_relevant_content(student.answer, k=3)
+                            retrieved_chunks = rag_service.search_relevant_content(student.answer)
                             if retrieved_chunks:
                                 # 청크 리스트를 그대로 전달 (문자열이 아닌 리스트로!)
                                 processed_references = retrieved_chunks
@@ -377,18 +405,12 @@ class SequentialGradingEngine:
                         except Exception as e:
                             logger.warning(f"Fallback RAG error for {student.name}: {e}")
                 
-                # Call LLM service for grading
-                # 세션에서 모범 답안 경로 가져오기
-                import streamlit as st
-                reference_image_path = st.session_state.get('reference_image_path') if hasattr(st, 'session_state') else None
-                
                 result = self.llm_service.grade_student_sequential(
                     student=student,
                     rubric=rubric,
                     model_type=model_type,
                     grading_type=grading_type,
                     references=processed_references,
-                    groq_model_name=groq_model_name,
                     reference_image_path=reference_image_path
                 )
                 
@@ -430,8 +452,10 @@ class SequentialGradingEngine:
                     
                     if self.error_callback:
                         self.error_callback(f"Failed to grade student {student.name}", e)
-                    
-                    return None
+
+                    failed_result = self._create_failed_result(student, rubric, str(e))
+                    student_status.result = failed_result
+                    return failed_result
         
         return None
     
@@ -518,9 +542,9 @@ class SequentialGradingEngine:
         model_type: str,
         grading_type: str,
         references: Optional[List[str]] = None,
-        groq_model_name: str = "qwen/qwen3-32b",
         max_retries: Optional[int] = None,
-        uploaded_files: Optional[List] = None  # New parameter for on-demand RAG processing
+        uploaded_files: Optional[List] = None,
+        reference_image_path: Optional[str] = None
     ) -> List[GradingResult]:
         """
         Retry grading for failed students only.
@@ -530,9 +554,9 @@ class SequentialGradingEngine:
             model_type: LLM model to use
             grading_type: Type of grading
             references: Reference materials
-            groq_model_name: Specific Groq model to use (default: qwen/qwen3-32b)
             max_retries: Maximum retry attempts
             uploaded_files: Uploaded reference files for on-demand RAG processing
+            reference_image_path: Path to reference answer image for map grading
             
         Returns:
             List of newly successful results
@@ -559,10 +583,10 @@ class SequentialGradingEngine:
                 model_type=model_type,
                 grading_type=grading_type,
                 references=references,
-                groq_model_name=groq_model_name,
                 max_retries=max_retries,
                 uploaded_files=uploaded_files,  # Fallback용으로 유지
-                rag_service=None  # retry 시에는 RAG 인스턴스 없음 (fallback 사용)
+                rag_service=None,  # retry 시에는 RAG 인스턴스 없음 (fallback 사용)
+                reference_image_path=reference_image_path
             )
             
             if result:
@@ -619,20 +643,13 @@ class SequentialGradingEngine:
             validation_results["errors"].append(f"Rubric validation failed: {e}")
             validation_results["valid"] = False
         
-        # Validate model availability
+        # Validate selected model API key.
         api_status = self.llm_service.validate_api_availability()
-        
-        if model_type == "gemini" and not api_status["gemini"]:
-            validation_results["errors"].append("Gemini API not available")
+        if model_type not in api_status:
+            validation_results["errors"].append(f"Unsupported model type: {model_type}")
             validation_results["valid"] = False
-        
-        if model_type == "groq" and not api_status["groq"]:
-            validation_results["errors"].append("Groq API not available")
-            validation_results["valid"] = False
-        
-        # Validate grading type compatibility
-        if grading_type == GradingType.MAP and model_type == "groq":
-            validation_results["errors"].append("Map grading requires Gemini API (image support)")
+        elif not api_status[model_type]:
+            validation_results["errors"].append(f"{model_type} API not available")
             validation_results["valid"] = False
         
         # Add warnings

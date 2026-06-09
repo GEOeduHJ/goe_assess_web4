@@ -2,11 +2,11 @@
 
 **AI 기반 지리 교과목 특화 자동 채점 시스템**
 
-Streamlit 웹 UI와 Google Gemini API를 활용하여 서술형 및 백지도형 답안을 자동으로 채점하고 상세한 피드백을 제공하는 교육용 플랫폼입니다.
+Streamlit 웹 UI와 Google Gemini 및 OpenAI API를 활용하여 서술형 및 백지도형 답안을 자동으로 채점하고 상세한 피드백을 제공하는 교육용 플랫폼입니다.
 
-**2025년 10월 기준 주요 변경사항:**
-- Groq 모델 선택 기능은 UI에서 비활성화되어 사용자 선택 불가 (내부 로직은 유지)
-- OpenAI GPT-5 Mini 모델이 텍스트/이미지 문항 모두 지원됨
+**주요 변경사항:**
+- LLM provider를 Google Gemini와 OpenAI GPT-5 Mini로 정리
+- RAG 설정이 환경 변수와 `config.py` 값을 따르도록 개선
 
 ## ✨ 주요 기능
 
@@ -25,7 +25,6 @@ Streamlit 웹 UI와 Google Gemini API를 활용하여 서술형 및 백지도형
 ### 🤖 실제 AI 모델 지원
 - **Google Gemini 2.5 Flash**: 텍스트/이미지 멀티모달 채점
 - **OpenAI GPT-5 Mini**: 텍스트/이미지 채점 (UI에서 선택 가능)
-- **Groq API**: 고속 텍스트 채점 (내부 로직만 유지, UI에서 선택 불가)
 - **KURE-v1 Embedding**: 한국어 문서 벡터 임베딩 및 검색
 
 ## 🚀 설치 및 실행
@@ -51,13 +50,12 @@ uv pip install -r requirements.txt
 ```
 
 ### 4. 환경 변수 설정
-`.env` 또는 `.streamlit/secrets.toml` 파일에 아래와 같이 4가지 API 키를 반드시 입력해야 합니다. 
+`.env` 또는 `.streamlit/secrets.toml` 파일에 아래 API 키 중 사용할 모델에 해당하는 키를 입력합니다. 앱 시작에는 둘 중 하나 이상이 필요합니다.
 이 파일은 외부(공개 저장소 등)에 절대 노출하지 마세요.
 
 ```toml
 [api]
 google_api_key = "your_google_api_key_here"
-groq_api_key = "your_groq_api_key_here"
 openai_api_key = "your_openai_api_key_here"
 hf_token = "your_huggingface_token_here"
 ```
@@ -84,7 +82,7 @@ geo_assess_web4/
 │   ├── results_ui.py       # 결과 표시 및 시각화 UI
 │   └── __init__.py
 ├── services/               # 비즈니스 로직 서비스
-│   ├── llm_service.py      # LLM API 통합 (Gemini, Groq, GPT-5-mini)
+│   ├── llm_service.py      # LLM API 통합 (Gemini, GPT-5-mini)
 │   ├── rag_service.py      # RAG 문서 처리 및 검색
 │   ├── grading_engine.py   # 순차 채점 엔진
 │   ├── file_service.py     # 파일 업로드 및 처리
@@ -109,7 +107,7 @@ geo_assess_web4/
 - **기능:** 한 페이지에서 채점 유형(텍스트/백지도형) 선택, AI 모델 선택, 파일 업로드까지 모두 수행
 - **사용자 입력/작업:**
 	- 채점 유형 선택: "📝 텍스트 문항" 또는 "🗺️ 백지도형 문항" 버튼 클릭
-	- AI 모델 선택: 유형에 따라 Gemini, GPT-5 Mini(텍스트/이미지), Groq(텍스트) 중 선택 (백지도형은 멀티모달만)
+	- AI 모델 선택: Gemini 또는 GPT-5 Mini 중 선택
 	- 파일 업로드:
 		- 텍스트 문항: 참고 문서(PDF/DOCX, 선택), 학생 답안 Excel(필수, 학생명/반/답안)
 		- 백지도형 문항: 모범 답안 이미지(필수), 학생 목록 Excel(필수, 학생명/반), 학생 답안 이미지들(필수, 파일명에 학생명 포함)
@@ -126,7 +124,7 @@ geo_assess_web4/
 	- 모든 설정 완료 후 "채점 실행" 페이지로 이동
 
 ### 3. 채점 실행 및 진행률 (채점 실행 페이지)
-- **기능:** 자동 채점 시작/일시정지/재시작/중단, 진행률·오류·실패 재시도, 실시간 결과 미리보기
+- **기능:** 자동 채점 시작/현재 학생 후 정지/중단, 진행률·오류·실패 재시도, 실시간 결과 미리보기
 - **사용자 입력/작업:**
 	- "채점 시작" 버튼 클릭 → 자동 채점 시작
 	- 진행률, 완료/실패 학생 수, 평균 소요시간, 예상 완료시간 실시간 확인

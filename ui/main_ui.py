@@ -52,7 +52,7 @@ class GradingType(Enum):
 class LLMModel(Enum):
     """사용 가능한 LLM 모델 열거형"""
     GEMINI = "gemini"
-    GROQ = "groq"
+    GPT5_MINI = "gpt-5-mini"
 
 
 class MainUI:
@@ -189,26 +189,21 @@ class MainUI:
                     "description": "Google의 최신 멀티모달 AI 모델. 텍스트와 이미지 문항 모두 분석 가능합니다.",
                     "icon": "🔥"
                 },
-                "gpt-5-mini": {
+                LLMModel.GPT5_MINI.value: {
                     "name": "OpenAI GPT-5 Mini",
                     "description": "OpenAI의 최신 추론 모델. 텍스트와 이미지 문항 모두 분석 가능합니다.",
                     "icon": "⚡"
                 }
             }
         else:
-            # For DESCRIPTIVE type, show all models
+            # For DESCRIPTIVE type, show supported text models
             model_options = {
                 LLMModel.GEMINI.value: {
                     "name": "Google Gemini 2.5 Flash",
                     "description": "Google의 최신 멀티모달 AI 모델. 텍스트와 이미지 문항 모두 분석 가능합니다.",
                     "icon": "🔥"
                 },
-                # LLMModel.GROQ.value: {
-                #     "name": "Groq",
-                #     "description": "빠른 추론 속도를 제공하는 텍스트 전용 AI 모델입니다.",
-                #     "icon": "⚡"
-                # },
-                "gpt-5-mini": {
+                LLMModel.GPT5_MINI.value: {
                     "name": "OpenAI GPT-5 Mini",
                     "description": "OpenAI의 최신 추론 모델. 텍스트와 이미지 문항 모두 분석 가능합니다.",
                     "icon": "⚡"
@@ -228,32 +223,6 @@ class MainUI:
             
             # Display model description
             st.info(f"ℹ️ {model_options[selected_model]['description']}")
-            
-            # If Groq is selected, show model options
-            if selected_model == LLMModel.GROQ.value:
-                st.markdown("#### 🧠 Groq 모델 상세 선택")
-                groq_model_options = {
-                    "qwen/qwen3-32b": "Qwen3 32B",
-                    "openai/gpt-oss-120b": "GPT-OSS 120B"
-                }
-                
-                selected_groq_model = st.selectbox(
-                    "Groq 모델 선택:",
-                    options=list(groq_model_options.keys()),
-                    format_func=lambda x: groq_model_options[x],
-                    key="groq_model_selection",
-                    help="Groq 플랫폼에서 사용할 구체적인 모델을 선택해주세요."
-                )
-                
-                st.session_state.selected_groq_model = selected_groq_model
-                
-                # 선택 확인 표시
-                st.success(f"✅ 선택된 Groq 모델: **{groq_model_options[selected_groq_model]}**")
-                
-                # API 호출에 사용될 모델명 표시
-                with st.expander("🔧 기술 정보"):
-                    st.code(f"API 호출 모델명: {selected_groq_model}")
-                    st.info("이 모델명이 실제 Groq API 호출에 사용됩니다.")
     
     def render_file_upload_section(self):
         """
@@ -483,11 +452,7 @@ class MainUI:
             # Map model value to display name
             if st.session_state.selected_model == LLMModel.GEMINI.value:
                 model_name = "Google Gemini 2.5 Flash"
-            elif st.session_state.selected_model == LLMModel.GROQ.value:
-                # Show specific Groq model name
-                groq_model = st.session_state.get('selected_groq_model', 'qwen/qwen3-32b')
-                model_name = f"Groq ({groq_model})"
-            elif st.session_state.selected_model == "gpt-5-mini":
+            elif st.session_state.selected_model == LLMModel.GPT5_MINI.value:
                 model_name = "OpenAI GPT-5 Mini"
             else:
                 model_name = st.session_state.selected_model

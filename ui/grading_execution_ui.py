@@ -86,13 +86,13 @@ class GradingSession:
     model_type: str
     grading_type: str
     references: Optional[List[str]] = None
-    groq_model: str = "qwen/qwen3-32b"  # 추가된 필드
     start_time: Optional[datetime] = None
     is_active: bool = False
     is_paused: bool = False
     results: List[GradingResult] = field(default_factory=list)
     # Store uploaded reference files for on-demand processing
     uploaded_files: Optional[List] = None
+    reference_image_path: Optional[str] = None
     
     def __post_init__(self):
         if self.results is None:
@@ -143,8 +143,7 @@ class GradingExecutionUI:
         rubric: Rubric,
         model_type: str,
         grading_type: str,
-        references: Optional[List[str]] = None,
-        groq_model: str = "qwen/qwen3-32b"
+        references: Optional[List[str]] = None
     ):
         """
         Render the main grading execution page.
@@ -155,7 +154,6 @@ class GradingExecutionUI:
             model_type: Selected LLM model
             grading_type: Type of grading (descriptive/map)
             references: Reference materials from RAG
-            groq_model: Selected Groq model (if applicable)
         """
         st.markdown("## 🚀 채점 실행")
         st.markdown("---")
@@ -168,11 +166,10 @@ class GradingExecutionUI:
                 model_type=model_type,
                 grading_type=grading_type,
                 references=references,
-                groq_model=groq_model,
-                uploaded_files=st.session_state.get('uploaded_reference_files', None)  # Pass uploaded files
+                uploaded_files=st.session_state.get('uploaded_reference_files', None),
+                reference_image_path=st.session_state.get('reference_image_path')
             )
             print(f"DEBUG: Created new grading session with {len(students) if students else 0} students")
-            print(f"DEBUG: Using Groq model: {groq_model}")
         else:
             # Update existing session with new data
             st.session_state.grading_session.students = students
@@ -180,11 +177,10 @@ class GradingExecutionUI:
             st.session_state.grading_session.model_type = model_type
             st.session_state.grading_type = grading_type
             st.session_state.grading_session.references = references
-            st.session_state.grading_session.groq_model = groq_model
+            st.session_state.grading_session.reference_image_path = st.session_state.get('reference_image_path')
             if st.session_state.get('uploaded_reference_files'):
                 st.session_state.grading_session.uploaded_files = st.session_state.uploaded_reference_files
             print(f"DEBUG: Updated grading session with {len(students) if students else 0} students")
-            print(f"DEBUG: Using Groq model: {groq_model}")
         
         # Render grading overview
         self.render_grading_overview()
@@ -259,10 +255,6 @@ class GradingExecutionUI:
             # Map model type to display name
             if session.model_type == "gemini":
                 model_name = "Gemini 2.5 Flash"
-            elif session.model_type == "groq":
-                # Show specific Groq model name
-                groq_model = getattr(session, 'groq_model', 'qwen/qwen3-32b')
-                model_name = f"Groq ({groq_model})"
             elif session.model_type == "gpt-5-mini":
                 model_name = "GPT-5 Mini"
             else:
@@ -387,24 +379,15 @@ class GradingExecutionUI:
                 )
         
         with col2:
-            # Pause/Resume button
+            # Graceful stop button. True resume requires checkpointing, so avoid a misleading pause/resume UI.
             if session and session.is_active:
-                if not session.is_paused:
-                    if st.button(
-                        "⏸️ 일시정지",
-                        key="pause_grading",
-                        use_container_width=True,
-                        help="현재 학생 채점 완료 후 일시정지합니다"
-                    ):
-                        self.pause_grading()
-                else:
-                    if st.button(
-                        "▶️ 재시작",
-                        key="resume_grading",
-                        use_container_width=True,
-                        help="일시정지된 채점을 재시작합니다"
-                    ):
-                        self.resume_grading()
+                if st.button(
+                    "⏸️ 현재 학생 후 정지",
+                    key="pause_grading",
+                    use_container_width=True,
+                    help="현재 학생 채점 완료 후 배치를 정지합니다"
+                ):
+                    self.pause_grading()
         
         with col3:
             # Stop grading button
@@ -433,7 +416,7 @@ class GradingExecutionUI:
         # Show current status (only if not completed)
         if session and session.is_active:
             if session.is_paused:
-                st.warning("⏸️ 채점이 일시정지되었습니다. 재시작 버튼을 눌러 계속 진행하세요.")
+                st.warning("⏸️ 현재 학생 채점 완료 후 배치를 정지합니다. 완료된 결과는 유지됩니다.")
             else:
                 st.info("🔄 채점이 진행 중입니다. 실시간으로 결과가 업데이트됩니다.")
     
@@ -569,18 +552,21 @@ class GradingExecutionUI:
         
         # Switch model
         if session.model_type == "gemini":
-            new_model = "groq"
-            st.info("🔄 Groq 모델로 전환하여 재시도합니다...")
+            if not config.OPENAI_API_KEY:
+                st.warning("OpenAI API 키가 없어 GPT-5 Mini로 전환할 수 없습니다.")
+                return
+            new_model = "gpt-5-mini"
+            st.info("🔄 GPT-5 Mini로 전환하여 재시도합니다...")
         else:
+            if not config.GOOGLE_API_KEY:
+                st.warning("Google API 키가 없어 Gemini로 전환할 수 없습니다.")
+                return
             new_model = "gemini"
             st.info("🔄 Gemini 모델로 전환하여 재시도합니다...")
         
         # Update session model
         session.model_type = new_model
-        
-        # If switching to Groq, set default Groq model if not already set
-        if new_model == "groq" and not hasattr(st.session_state, 'selected_groq_model'):
-            st.session_state.selected_groq_model = "qwen/qwen3-32b"
+        st.session_state.selected_model = new_model
         
         # Retry failed students
         self.retry_failed_students()
@@ -593,7 +579,8 @@ class GradingExecutionUI:
         # Resume grading if paused
         session = st.session_state.grading_session
         if session.is_paused:
-            self.resume_grading()
+            session.is_paused = False
+            st.info("정지 요청이 해제되었습니다. 이미 취소된 배치는 자동 재개되지 않습니다.")
         
         st.info("⏭️ 오류를 무시하고 다음 학생부터 계속 진행합니다.")
     
@@ -750,9 +737,6 @@ class GradingExecutionUI:
     def run_grading_thread(self, session: GradingSession):
         """Run grading in background thread with comprehensive error handling."""
         try:
-            # Get the selected Groq model from session
-            groq_model_name = session.groq_model
-            
             if self.grading_engine:
                 results = self.grading_engine.grade_students_sequential(
                     students=session.students,
@@ -760,8 +744,8 @@ class GradingExecutionUI:
                     model_type=session.model_type,
                     grading_type=session.grading_type,
                     references=session.references,
-                    groq_model_name=groq_model_name,
-                    uploaded_files=session.uploaded_files  # Pass uploaded files for on-demand RAG processing
+                    uploaded_files=session.uploaded_files,  # Pass uploaded files for on-demand RAG processing
+                    reference_image_path=session.reference_image_path
                 )
                 
                 # Mark session as completed - completion callback will handle UI updates
@@ -790,23 +774,14 @@ class GradingExecutionUI:
             self.progress_queue.put(('thread_error', error_info))
     
     def pause_grading(self):
-        """Pause the grading process."""
+        """Stop the grading process after the current student finishes."""
         session = st.session_state.grading_session
         session.is_paused = True
         
         if self.grading_engine:
             self.grading_engine.cancel_grading()
         
-        st.warning("⏸️ 채점 일시정지가 요청되었습니다. 현재 학생 채점 완료 후 정지됩니다.")
-    
-    def resume_grading(self):
-        """Resume the grading process."""
-        session = st.session_state.grading_session
-        session.is_paused = False
-        
-        # Restart grading from where it left off
-        # This would require more complex state management
-        st.info("▶️ 채점이 재시작되었습니다.")
+        st.warning("⏸️ 현재 학생 채점 완료 후 배치를 정지합니다.")
     
     def stop_grading(self):
         """Stop the grading process completely."""
@@ -829,16 +804,13 @@ class GradingExecutionUI:
         session = st.session_state.grading_session
         
         try:
-            # Get the selected Groq model from session state
-            groq_model_name = getattr(st.session_state, 'selected_groq_model', 'qwen/qwen3-32b')
-            
             new_results = self.grading_engine.retry_failed_students(
                 rubric=session.rubric,
                 model_type=session.model_type,
                 grading_type=session.grading_type,
                 references=session.references,
-                groq_model_name=groq_model_name,
-                uploaded_files=session.uploaded_files  # Pass uploaded files for on-demand RAG processing
+                uploaded_files=session.uploaded_files,  # Pass uploaded files for on-demand RAG processing
+                reference_image_path=session.reference_image_path
             )
             
             # Add new results to session

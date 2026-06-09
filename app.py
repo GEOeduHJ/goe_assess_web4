@@ -27,27 +27,31 @@ def main():
     st.markdown("**AI 기반 지리과 서답형 문항 유형별 자동 채점 시스템**")
     
     # API 키 설정 확인
-    api_validation = config.validate_api_keys()
+    api_validation = config.validate_available_api_keys()
     if not api_validation["valid"]:
-        st.error(f"⚠️ API 키가 설정되지 않았습니다: {', '.join(api_validation['missing_keys'])}")
-        st.info("📝 .env 파일에 필요한 API 키를 설정해주세요.")
+        st.error("⚠️ 지원되는 API 키가 하나도 설정되지 않았습니다.")
+        st.info("📝 .env 파일에 GOOGLE_API_KEY 또는 OPENAI_API_KEY 중 하나 이상을 설정해주세요.")
         
         # 설정 도움말 표시
         with st.expander("🔧 API 키 설정 방법"):
             st.markdown("""
-            **.env 파일에 다음 API 키들을 설정해주세요:**
+            **.env 파일에 다음 API 키 중 하나 이상을 설정해주세요:**
             
             ```
             GOOGLE_API_KEY=your_google_api_key_here
-            GROQ_API_KEY=your_groq_api_key_here
+            OPENAI_API_KEY=your_openai_api_key_here
             ```
             
             **API 키 발급 방법:**
             - **Google Gemini API**: [Google AI Studio](https://aistudio.google.com/app/apikey)에서 발급
-            - **Groq API**: [Groq Console](https://console.groq.com/keys)에서 발급
+            - **OpenAI API**: [OpenAI Platform](https://platform.openai.com/api-keys)에서 발급
             """)
         
         st.stop()
+    else:
+        missing_keys = api_validation.get("missing_keys", [])
+        if missing_keys:
+            st.warning(f"일부 모델 API 키가 없습니다: {', '.join(missing_keys)}. 해당 모델 선택 시 채점 시작 단계에서 안내됩니다.")
     
     # 페이지 네비게이션을 위한 세션 상태 초기화
     if 'current_page' not in st.session_state:
@@ -150,9 +154,6 @@ def render_grading_page():
     grading_type = st.session_state.get('grading_type', 'descriptive')
     references = st.session_state.get('rag_references')
     
-    # Groq 모델 선택값 가져오기
-    groq_model = st.session_state.get('selected_groq_model', 'qwen/qwen3-32b')
-    
     # 채점 실행 UI 렌더링
     grading_ui = create_grading_execution_ui()
     grading_ui.render_grading_execution_page(
@@ -160,8 +161,7 @@ def render_grading_page():
         rubric=rubric,
         model_type=model_type,
         grading_type=grading_type,
-        references=references,
-        groq_model=groq_model
+        references=references
     )
 
 
@@ -213,11 +213,10 @@ def render_sidebar():
         
         # API 상태
         st.markdown("### 🔑 API 상태")
-        api_validation = config.validate_api_keys()
-        if api_validation["valid"]:
-            st.success("✅ 모든 API 키가 설정되었습니다")
-        else:
-            st.error(f"❌ 누락된 API 키: {', '.join(api_validation['missing_keys'])}")
+        api_validation = config.validate_available_api_keys()
+        available = api_validation.get("available", {})
+        st.write("Gemini:", "✅ 사용 가능" if available.get("gemini") else "❌ 키 없음")
+        st.write("GPT-5 Mini:", "✅ 사용 가능" if available.get("gpt-5-mini") else "❌ 키 없음")
         
         # 도움말 및 문서
         st.markdown("---")

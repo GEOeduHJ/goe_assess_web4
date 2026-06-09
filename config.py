@@ -38,14 +38,13 @@ class Config:
     
     # API 키
     GOOGLE_API_KEY: Optional[str] = get_config_value("GOOGLE_API_KEY")
-    GROQ_API_KEY: Optional[str] = get_config_value("GROQ_API_KEY")
-    OPENAI_API_KEY: Optional[str] = get_config_value("OPENAI_API_KEY")  # 추가
+    OPENAI_API_KEY: Optional[str] = get_config_value("OPENAI_API_KEY")
     HF_TOKEN: Optional[str] = get_config_value("HF_TOKEN")
     
     # 애플리케이션 설정
     APP_TITLE: str = get_config_value("APP_TITLE", "자동 채점 플랫폼")
     MAX_FILE_SIZE_MB: int = int(get_config_value("MAX_FILE_SIZE_MB", "100"))
-    EMBEDDING_MODEL: str = get_config_value("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2") # rag_service.py와 동기화 필요
+    EMBEDDING_MODEL: str = get_config_value("EMBEDDING_MODEL", "nlpai-lab/KURE-v1")
     FAISS_INDEX_TYPE: str = get_config_value("FAISS_INDEX_TYPE", "IndexFlatIP")
     
     # 처리 설정
@@ -70,24 +69,60 @@ class Config:
     BATCH_PROCESSING_SIZE: int = int(os.getenv("BATCH_PROCESSING_SIZE", "10"))
     
     @classmethod
-    def validate_api_keys(cls) -> dict:
+    def validate_available_api_keys(cls) -> dict:
         """
-        필요한 API 키가 설정되어 있는지 검증합니다.
+        지원되는 API 키 중 하나 이상이 설정되어 있는지 검증합니다.
         
         Returns:
-            dict: 누락된 키가 포함된 검증 결과
+            dict: 사용 가능한 provider와 누락된 키가 포함된 검증 결과
         """
-        missing_keys = []
-        
-        if not cls.GOOGLE_API_KEY:
-            missing_keys.append("GOOGLE_API_KEY")
-        
-        if not cls.GROQ_API_KEY:
-            missing_keys.append("GROQ_API_KEY")
-        
+        available = {
+            "gemini": bool(cls.GOOGLE_API_KEY),
+            "gpt-5-mini": bool(cls.OPENAI_API_KEY),
+        }
         return {
-            "valid": len(missing_keys) == 0,
-            "missing_keys": missing_keys
+            "valid": any(available.values()),
+            "available": available,
+            "missing_keys": [
+                key for key, ok in {
+                    "GOOGLE_API_KEY": bool(cls.GOOGLE_API_KEY),
+                    "OPENAI_API_KEY": bool(cls.OPENAI_API_KEY),
+                }.items()
+                if not ok
+            ],
+        }
+
+    @classmethod
+    def validate_model_api_key(cls, model_type: str) -> dict:
+        """선택된 모델에 필요한 API 키가 있는지 검증합니다."""
+        required = {
+            "gemini": ("GOOGLE_API_KEY", cls.GOOGLE_API_KEY),
+            "gpt-5-mini": ("OPENAI_API_KEY", cls.OPENAI_API_KEY),
+        }
+        if model_type not in required:
+            return {
+                "valid": False,
+                "missing_keys": [],
+                "message": f"Unsupported model type: {model_type}",
+            }
+
+        key_name, value = required[model_type]
+        return {
+            "valid": bool(value),
+            "missing_keys": [] if value else [key_name],
+        }
+
+    @classmethod
+    def validate_api_keys(cls) -> dict:
+        """이전 호출부 호환용 API 키 검증 래퍼."""
+        return cls.validate_available_api_keys()
+
+    @classmethod
+    def get_available_models(cls) -> dict:
+        """UI에서 사용할 수 있는 모델 상태를 반환합니다."""
+        return {
+            "gemini": bool(cls.GOOGLE_API_KEY),
+            "gpt-5-mini": bool(cls.OPENAI_API_KEY),
         }
     
     @classmethod

@@ -1,6 +1,6 @@
 # 🏗️ 지리과 자동 채점 플랫폼 아키텍처 (업데이트)
 
-이 문서는 최신 코드 기준(동적 Groq 모델 선택, Gemini 2.5 Flash 고정, 사용되지 않는 `prompt_utils.py` 정리 상태)을 반영한 전체 시스템 아키텍처와 데이터 흐름을 설명합니다.
+이 문서는 최신 코드 기준(Gemini 2.5 Flash, OpenAI GPT-5 Mini, 설정 기반 RAG)을 반영한 전체 시스템 아키텍처와 데이터 흐름을 설명합니다.
 
 ## 1. 전체 프로젝트 구조
 
@@ -46,7 +46,7 @@ flowchart TD
     %% External APIs
     subgraph "🌐 External"
         GEMINI[Gemini 2.5 Flash]
-        GROQ[Groq (Qwen3 / GPT-OSS)]
+        OPENAI[OpenAI GPT-5 Mini]
         HF[HuggingFace<br/>sentence-transformers]
     end
 
@@ -74,7 +74,7 @@ flowchart TD
     GRADING --> RESULTM
 
     LLM --> GEMINI
-    LLM --> GROQ
+    LLM --> OPENAI
     RAG --> FAISS
     RAG --> HF
     FILE --> TEMP
@@ -100,8 +100,8 @@ flowchart TD
     SELECT --> DESC{서술형?}
     SELECT --> MAP{백지도형?}
     
-    DESC -->|Yes| MODEL_D[AI 모델 선택<br/>Gemini/Groq]
-    MAP -->|Yes| MODEL_M[AI 모델 선택<br/>Gemini Only]
+    DESC -->|Yes| MODEL_D[AI 모델 선택<br/>Gemini/GPT-5 Mini]
+    MAP -->|Yes| MODEL_M[AI 모델 선택<br/>Gemini/GPT-5 Mini]
     
     MODEL_D --> REF_UPLOAD[참고 문서 업로드<br/>PDF, DOCX]
     MODEL_M --> STUDENT_LIST[학생 목록 업로드<br/>Excel]
@@ -274,7 +274,7 @@ flowchart TD
     subgraph "텍스트 채점"
         TEXT_PROCESS --> RAG_SEARCH[최대 3개 관련 청크]
         RAG_SEARCH --> TEXT_PROMPT[프롬프트 조립]
-        TEXT_PROMPT --> TEXT_LLM[Groq 또는 Gemini]
+        TEXT_PROMPT --> TEXT_LLM[Gemini 또는 GPT-5 Mini]
     end
     
     subgraph "이미지 채점 흐름"
@@ -332,10 +332,10 @@ flowchart TD
 | 항목 | 내용 |
 |------|------|
 | Gemini 모델 | 고정: `gemini-2.5-flash` (텍스트 + 멀티모달) |
-| Groq 지원 모델 | `qwen/qwen3-32b`, `openai/gpt-oss-120b` (UI 선택 세션 반영) |
-| 선택 흐름 | UI(`selected_groq_model`) → `LLMService.get_selected_groq_model()` → `call_groq_api()` |
-| 이미지 채점 | 백지도형은 Gemini 강제 (Groq 이미지 미지원) |
-| max_tokens 정책 | qwen: 40,960 / gpt-oss: 65,536 (초과 방지) |
+| OpenAI 모델 | `gpt-5-mini` (텍스트 + 멀티모달) |
+| 선택 흐름 | UI(`selected_model`) → `LLMService.select_model()` → provider API 호출 |
+| 이미지 채점 | Gemini 또는 GPT-5 Mini 사용 |
+| max_tokens 정책 | provider SDK 기본값 사용 |
 | 프롬프트 구성 | `LLMService.generate_prompt()` 내부 구현 (JSON 스키마 명시) |
 | 캐싱 | 프롬프트+이미지 해시 기반 메모리 캐시 (TTL: `API_CACHE_TTL_SECONDS`) |
 
@@ -356,23 +356,23 @@ flowchart TD
 |------|-----------|
 | API 응답 캐시 | `response_cache` (Key: prompt + 이미지 해시) / LRU 유사 수동 정리 |
 | TTL | `API_CACHE_TTL_SECONDS` (기본 300초 예상) |
-| 재시도 | `retry_with_backoff` (지수 백오프) / Groq & Gemini 공통 |
+| 재시도 | `retry_with_backoff` (지수 백오프) / Gemini & OpenAI 공통 |
 | 오류 분류 | `ErrorType` (AUTH, RATE_LIMIT, PARSING, NETWORK, API_COMMUNICATION 등) |
 | 사용자 메시지 | `handle_error` 가 내부 로그 + 사용자 친화 메시지 반환 |
-| 파싱 복원력 | 응답 내 최초 `{` ~ 최종 `}` 추출 후 JSONDecode 재시도; 필드 누락 검증 |
+| 파싱 복원력 | `JSONDecoder.raw_decode` 후보 검증 후 필드 누락 검증 |
 
 ## 9. 미사용 / 개선 대상
 
 | 항목 | 상태 | 비고 |
 |------|------|------|
 | `prompt_utils.py` | 미사용 | 삭제하거나 참고용으로 명시 유지 중 |
-| `config.EMBEDDING_MODEL` | RAG 미사용 | 향후 통일 시 RAGService 교체 가능 |
+| `config.EMBEDDING_MODEL` | RAG 사용 | 환경별 임베딩 모델 전환 가능 |
 | `BATCH_PROCESSING_SIZE` | 논리 미적용 | 실제 배치 처리 구현 시 사용 고려 |
 
 ## 10. 향후 확장 포인트
 
-1. Groq 모델 추가 (예: Mixtral, Llama 계열) 시 `max_tokens` 매핑 표 분리
-2. RAG 임베딩 모델을 `config.EMBEDDING_MODEL` 과 통합 (환경 전환 편의)
+1. provider별 structured output 설정을 더 엄격한 JSON Schema 검증으로 통합
+2. RAG 임베딩 모델 및 FAISS 옵션을 운영 환경별 프로파일로 분리
 3. 채점 결과 메타데이터(프롬프트 해시, 모델 버전) 저장 → 재현성 향상
 4. 병렬 채점 (ThreadPool / Async) + 레이트 리미트 어댑터
 5. 장기 캐시 (디스크 or Redis) 로 동일 답안 재채점 비용 절감
@@ -385,13 +385,13 @@ flowchart TD
 - **모듈 분리**: UI / Service / Model / Utility 계층화
 - **단순성**: 프롬프트 로직 단일 서비스 집중 (`LLMService`)
 - **회복력**: 재시도, 오류 타입 분류, 기본 안전 점수 처리
-- **가시성**: 진행률, 디버그 로그 (선택된 Groq 모델, max_tokens)
+- **가시성**: 진행률, 선택 모델, 이미지 사용 여부 로그
 - **점진적 확장**: 현재 단일 스레드 → 향후 병렬화 준비
 
 ### 🚀 **핵심 기술 스택**
 - **Frontend**: Streamlit
-- **LLM**: Gemini 2.5 Flash (멀티모달), Groq (Qwen3-32B / GPT-OSS-120B)
-- **RAG**: FAISS + sentence-transformers/all-MiniLM-L6-v2
+- **LLM**: Gemini 2.5 Flash (멀티모달), OpenAI GPT-5 Mini
+- **RAG**: FAISS + 설정 기반 HuggingFace 임베딩 모델
 - **Data 처리**: Pandas, OpenPyXL
 - **문서 처리**: PyPDF2, python-docx
 
@@ -407,7 +407,7 @@ flowchart TD
 - **로그**: 모델 선택 / 이미지 사용 여부 / 응답 파싱 경계 로그
 
 ---
-문서 최신화 시점: 현재 코드 기준 (`llm_service.py` 동적 Groq 모델 & max_tokens 적용 완료). 추가 변경 발생 시 본 문서를 재생성하거나 섹션별 Diff 반영을 권장합니다.
+문서 최신화 시점: 현재 코드 기준 (`llm_service.py` Gemini/OpenAI provider 정리 완료). 추가 변경 발생 시 본 문서를 재생성하거나 섹션별 Diff 반영을 권장합니다.
 
 ---
 ## 부록 A. 추가 아키텍처 다이어그램 (확장 뷰)
@@ -445,7 +445,7 @@ flowchart LR
 
     subgraph EXT[External APIs]
         G1[Gemini 2.5 Flash]
-        G2[Groq Qwen3 / GPT-OSS]
+        G2[OpenAI GPT-5 Mini]
         HF[HuggingFace Embeddings]
     end
 
@@ -488,7 +488,7 @@ sequenceDiagram
     participant GE as GradingEngine
     participant LLM as LLMService
     participant RAG as RAGService
-    participant API as Gemini/Groq
+    participant API as Gemini/OpenAI
     participant PARSE as Parse/Validate
 
     UI->>GE: grade_student()
@@ -615,7 +615,7 @@ flowchart LR
         WN --> LLMW
     end
     LLMW --> CACHE[(Shared Cache)]
-    LLMW --> API[(Gemini/Groq)]
+    LLMW --> API[(Gemini/OpenAI)]
     W1 --> PROG[Progress Store]
     W2 --> PROG
     WN --> PROG

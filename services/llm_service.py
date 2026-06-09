@@ -1,7 +1,7 @@
 """
 지리 자동 채점 시스템의 LLM 서비스
 
-이 모듈은 Google Gemini 및 Groq API를 사용한 자동 채점을 위한 LLM 통합을 제공합니다.
+이 모듈은 Google Gemini 및 OpenAI GPT API를 사용한 자동 채점을 위한 LLM 통합을 제공합니다.
 구조화된 프롬프트를 통해 텍스트 기반(서술형) 및 이미지 기반(지도) 채점을 모두 지원합니다.
 메모리 사용량, API 호출 효율성, 응답 캐싱에 대한 성능 최적화가 포함되어 있습니다.
 """
@@ -16,22 +16,8 @@ from functools import lru_cache
 import hashlib
 import inspect
 
-# Groq 클라이언트의 httpx 프록시 문제 해결책
-import groq._base_client
-original_sync_httpx_client_wrapper_init = groq._base_client.SyncHttpxClientWrapper.__init__
-
-def patched_sync_httpx_client_wrapper_init(self, **kwargs):
-    # 'proxies' 인수가 있으면 제거
-    if 'proxies' in kwargs:
-        del kwargs['proxies']
-    return original_sync_httpx_client_wrapper_init(self, **kwargs)
-
-# 패치 적용
-groq._base_client.SyncHttpxClientWrapper.__init__ = patched_sync_httpx_client_wrapper_init
-
 import google.generativeai as genai
-from groq import Groq
-from openai import OpenAI  # 추가
+from openai import OpenAI
 
 from config import config
 from models.student_model import Student
@@ -49,8 +35,7 @@ logger = logging.getLogger(__name__)
 class LLMModelType:
     """LLM 모델 유형을 위한 열거형 클래스"""
     GEMINI = "gemini"
-    GROQ = "groq"
-    GPT5_MINI = "gpt-5-mini"  # 추가
+    GPT5_MINI = "gpt-5-mini"
 
 
 class GradingType:
@@ -64,13 +49,12 @@ class LLMService:
     LLM 기반 자동 채점을 위한 서비스
     
     구조화된 프롬프트 생성 및 응답 파싱과 함께 
-    Google Gemini (텍스트 + 이미지) 및 Groq (텍스트만) API를 지원합니다.
+    Google Gemini 및 OpenAI GPT-5-mini API를 지원합니다.
     """
     
     def __init__(self):
         """Initialize LLM service with API clients and performance optimization."""
-        self.groq_client = None
-        self.openai_client = None  # 추가
+        self.openai_client = None
         self._initialize_clients()
         
         # Performance optimization (removed as part of system monitoring cleanup)
@@ -91,22 +75,7 @@ class LLMService:
             else:
                 logger.warning("Google API key not found")
             
-            # Initialize Groq
-            if config.GROQ_API_KEY:
-                try:
-                    # Fix: Initialize Groq client with explicit parameters to avoid proxy issues
-                    self.groq_client = Groq(
-                        api_key=config.GROQ_API_KEY,
-                        http_client=None  # Explicitly set to None to avoid proxy issues
-                    )
-                    logger.info("Groq client initialized successfully")
-                except Exception as groq_error:
-                    logger.error(f"Failed to initialize Groq client: {groq_error}")
-                    self.groq_client = None
-            else:
-                logger.warning("Groq API key not found")
-            
-            # Initialize OpenAI (추가)
+            # Initialize OpenAI
             if config.OPENAI_API_KEY:
                 try:
                     self.openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
@@ -122,8 +91,6 @@ class LLMService:
             # Log initialization status
             if not config.GOOGLE_API_KEY:
                 logger.info("Gemini client not initialized due to missing API key")
-            if self.groq_client is None:
-                logger.info("Groq client not initialized due to error")
             if self.openai_client is None:
                 logger.info("OpenAI client not initialized due to error")
     
@@ -132,7 +99,7 @@ class LLMService:
         Select appropriate model based on grading type and user preference.
         
         Args:
-            model_type: Preferred model type (gemini/groq)
+            model_type: Preferred model type
             grading_type: Type of grading (descriptive/map)
             
         Returns:
@@ -141,35 +108,19 @@ class LLMService:
         Raises:
             ValueError: If invalid combination is requested
         """
-        # For map grading, only Gemini and GPT5_MINI support image analysis
-        if grading_type == GradingType.MAP:
-            if model_type == LLMModelType.GPT5_MINI and self.openai_client:
-                return LLMModelType.GPT5_MINI
-            elif not config.GOOGLE_API_KEY:
-                raise ValueError("Gemini or GPT-5-mini API is required for map grading but not available")
+        if model_type == LLMModelType.GEMINI and config.GOOGLE_API_KEY:
             return LLMModelType.GEMINI
-        
-        # For descriptive grading, allow user choice
-        if grading_type == GradingType.DESCRIPTIVE:
-            if model_type == LLMModelType.GEMINI and config.GOOGLE_API_KEY:
-                return LLMModelType.GEMINI
-            elif model_type == LLMModelType.GROQ and self.groq_client:
-                return LLMModelType.GROQ
-            elif model_type == LLMModelType.GPT5_MINI and self.openai_client:
-                return LLMModelType.GPT5_MINI
-            else:
-                # Fallback to available model
-                if config.GOOGLE_API_KEY:
-                    return LLMModelType.GEMINI
-                elif self.groq_client:
-                    return LLMModelType.GROQ
-                elif self.openai_client:
-                    return LLMModelType.GPT5_MINI
-                    return LLMModelType.GROQ
-                else:
-                    raise ValueError("No LLM models available")
-        
-        raise ValueError(f"Invalid grading type: {grading_type}")
+
+        if model_type == LLMModelType.GPT5_MINI and self.openai_client:
+            return LLMModelType.GPT5_MINI
+
+        if config.GOOGLE_API_KEY:
+            return LLMModelType.GEMINI
+
+        if self.openai_client:
+            return LLMModelType.GPT5_MINI
+
+        raise ValueError("No supported LLM models available. Configure GOOGLE_API_KEY or OPENAI_API_KEY.")
     
     def generate_prompt(
         self, 
@@ -525,7 +476,8 @@ class LLMService:
                 
                 # Generation config with low temperature for consistent grading
                 generation_config = genai.types.GenerationConfig(
-                    temperature=1  # 채점 일관성을 위한 낮은 temperature
+                    temperature=0.1,
+                    response_mime_type="application/json"
                 )
                 
                 response = model.generate_content(content, generation_config=generation_config)
@@ -587,139 +539,6 @@ class LLMService:
             context="call_gemini_api"
         )
     
-    def get_selected_groq_model(self) -> str:
-        """세션 상태에서 선택된 Groq 모델을 가져옵니다."""
-        try:
-            import streamlit as st
-            if hasattr(st, 'session_state') and 'selected_groq_model' in st.session_state:
-                return st.session_state.selected_groq_model
-        except:
-            pass
-        
-        # 기본값 반환
-        return "qwen/qwen3-32b"
-
-    def call_groq_api(
-        self, 
-        prompt: str, 
-        model_name: Optional[str] = None,
-        max_retries: Optional[int] = None
-    ) -> Dict[str, Any]:
-        """
-        Call Groq API for text analysis with caching and optimization.
-        
-        Args:
-            prompt: Text prompt for the model
-            model_name: Name of the Groq model to use (None = auto-select from session)
-            max_retries: Maximum number of retry attempts
-            
-        Returns:
-            API response as dictionary
-            
-        Raises:
-            Exception: If API call fails after retries
-        """
-        # 모델명이 지정되지 않으면 세션에서 가져오기
-        if model_name is None:
-            model_name = self.get_selected_groq_model()
-        
-        print(f"DEBUG: Using Groq model: {model_name}")
-        
-        if not self.groq_client:
-            error_info = handle_error(
-                ValueError("Groq client not initialized"),
-                ErrorType.AUTHENTICATION,
-                context="call_groq_api: client not initialized",
-                user_context="Groq API 호출"
-            )
-            raise ValueError(error_info.user_message)
-        
-        # Check cache first
-        cache_key = self._generate_cache_key(prompt)
-        cached_response = self._get_cached_response(cache_key)
-        if cached_response:
-            logger.debug("Using cached Groq API response")
-            return cached_response
-        
-        def _make_api_call():
-            try:
-                # 모델별 max_tokens 설정
-                if "gpt-oss" in model_name:
-                    max_tokens = 65536  # GPT-OSS 120B 모델의 최대값
-                elif "qwen" in model_name:
-                    max_tokens = 40960  # Qwen3 32B 모델은 더 높은 값 지원
-                else:
-                    max_tokens = 65536  # 안전한 기본값
-                
-                print(f"DEBUG: Using max_tokens={max_tokens} for model {model_name}")
-                
-                # Call Groq API
-                response = self.groq_client.chat.completions.create(
-                    model=model_name,  # Use specified Groq model
-                    messages=[
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.1,  # Low temperature for consistent grading
-                    max_tokens=max_tokens
-                )
-                
-                if response.choices and response.choices[0].message.content:
-                    result = {"text": response.choices[0].message.content}
-                    # Cache successful response
-                    self._cache_response(cache_key, result)
-                    self.api_call_count += 1
-                    return result
-                else:
-                    raise ValueError("Empty response from Groq API")
-            
-            except Exception as e:
-                error_str = str(e).lower()
-                
-                if "quota" in error_str or "limit" in error_str or "rate" in error_str:
-                    error_info = handle_error(
-                        e,
-                        ErrorType.RATE_LIMIT,
-                        context="call_groq_api: rate limit exceeded",
-                        user_context="Groq API 호출"
-                    )
-                    raise Exception(error_info.user_message)
-                
-                elif "timeout" in error_str:
-                    error_info = handle_error(
-                        e,
-                        ErrorType.NETWORK,
-                        context="call_groq_api: timeout",
-                        user_context="Groq API 호출"
-                    )
-                    raise Exception(error_info.user_message)
-                
-                elif "auth" in error_str or "key" in error_str or "unauthorized" in error_str:
-                    error_info = handle_error(
-                        e,
-                        ErrorType.AUTHENTICATION,
-                        context="call_groq_api: authentication failed",
-                        user_context="Groq API 인증"
-                    )
-                    raise Exception(error_info.user_message)
-                
-                else:
-                    error_info = handle_error(
-                        e,
-                        ErrorType.API_COMMUNICATION,
-                        context="call_groq_api: general API error",
-                        user_context="Groq API 호출"
-                    )
-                    raise Exception(error_info.user_message)
-        
-        # Use retry mechanism with exponential backoff
-        max_retries = max_retries or config.MAX_RETRIES
-        return retry_with_backoff(
-            _make_api_call,
-            ErrorType.API_COMMUNICATION,
-            max_retries=max_retries,
-            context="call_groq_api"
-        )
-    
     def call_gpt5_mini_api(
         self,
         prompt: str,
@@ -747,6 +566,12 @@ class LLMService:
                 user_context="OpenAI API 클라이언트 초기화"
             )
             raise Exception(error_info.user_message)
+
+        cache_key = self._generate_cache_key_v2(prompt, reference_image_path, student_image_path)
+        cached_response = self._get_cached_response(cache_key)
+        if cached_response:
+            logger.debug("Using cached OpenAI API response")
+            return cached_response
         
         def _make_api_call():
             try:
@@ -801,10 +626,16 @@ class LLMService:
                         "content": input_content
                     }],
                     reasoning={"effort": "medium"},
-                    text={"verbosity": "low"}
+                    text={
+                        "format": {"type": "json_object"},
+                        "verbosity": "low"
+                    }
                 )
                 
-                return {"text": response.output_text}
+                result = {"text": response.output_text}
+                self._cache_response(cache_key, result)
+                self.api_call_count += 1
+                return result
                 
             except Exception as e:
                 # Handle specific OpenAI errors
@@ -874,29 +705,14 @@ class LLMService:
             print(f"DEBUG: API Response (length: {len(response_text)})")
             print(f"DEBUG: API Response content: {repr(response_text)}")
             
-            # Extract JSON from response (handle cases where LLM adds extra text)
-            json_start = response_text.find('{')
-            json_end = response_text.rfind('}') + 1
-            
-            if json_start == -1 or json_end == 0:
+            parsed = self._extract_json_object(response_text)
+
+            if parsed is None:
                 error_info = handle_error(
                     ValueError("No JSON found in response"),
                     ErrorType.PARSING,
                     context=f"parse_response: no JSON in response text (length: {len(response_text)})",
                     user_context="AI 응답 파싱"
-                )
-                raise ValueError(error_info.user_message)
-            
-            json_text = response_text[json_start:json_end]
-            
-            try:
-                parsed = json.loads(json_text)
-            except json.JSONDecodeError as e:
-                error_info = handle_error(
-                    e,
-                    ErrorType.PARSING,
-                    context=f"parse_response: JSON decode error in text: {json_text[:200]}...",
-                    user_context="AI 응답 JSON 파싱"
                 )
                 raise ValueError(error_info.user_message)
             
@@ -959,6 +775,31 @@ class LLMService:
                 user_context="AI 응답 파싱"
             )
             raise ValueError(error_info.user_message)
+
+    def _extract_json_object(self, response_text: str) -> Optional[Dict[str, Any]]:
+        """응답 텍스트에서 첫 번째 유효 JSON 객체를 엄격하게 추출합니다."""
+        if not response_text:
+            return None
+
+        text = response_text.strip()
+        decoder = json.JSONDecoder()
+
+        candidates = [0]
+        candidates.extend(i for i, char in enumerate(text) if char == "{")
+
+        seen = set()
+        for start in candidates:
+            if start in seen:
+                continue
+            seen.add(start)
+            try:
+                parsed, _ = decoder.raw_decode(text[start:])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+
+        return None
     
     def grade_student_sequential(
         self,
@@ -967,8 +808,7 @@ class LLMService:
         model_type: str,
         grading_type: str,
         references: Optional[List[str]] = None,
-        groq_model_name: str = "qwen/qwen3-32b",
-        reference_image_path: Optional[str] = None  # 새로 추가: 모범 답안 이미지 경로
+        reference_image_path: Optional[str] = None
     ) -> GradingResult:
         """
         Grade a single student's answer sequentially.
@@ -979,7 +819,6 @@ class LLMService:
             model_type: LLM model to use
             grading_type: Type of grading (descriptive/map)
             references: Reference materials from RAG
-            groq_model_name: Specific Groq model to use (default: qwen/qwen3-32b)
             
         Returns:
             Grading result with timing information
@@ -1034,8 +873,8 @@ class LLMService:
                     reference_image_path=reference_image_path,
                     student_image_path=image_path_to_use
                 )
-            else:  # GROQ
-                response = self.call_groq_api(prompt=prompt, model_name=groq_model_name)
+            else:
+                raise ValueError(f"Unsupported selected model: {selected_model}")
             
             # Parse response
             parsed_result = self.parse_response(response["text"], rubric)
@@ -1100,7 +939,6 @@ class LLMService:
         model_type: str,
         grading_type: str,
         references: Optional[List[str]] = None,
-        groq_model_name: str = "qwen/qwen3-32b",
         progress_callback: Optional[Callable] = None
     ) -> List[GradingResult]:
         """
@@ -1112,7 +950,6 @@ class LLMService:
             model_type: LLM model to use
             grading_type: Type of grading
             references: Reference materials from RAG
-            groq_model_name: Specific Groq model to use (default: qwen/qwen3-32b)
             progress_callback: Optional callback for progress updates
             
         Returns:
@@ -1131,8 +968,7 @@ class LLMService:
                     rubric=rubric,
                     model_type=model_type,
                     grading_type=grading_type,
-                    references=references,
-                    groq_model_name=groq_model_name
+                    references=references
                 )
                 
                 results.append(result)
@@ -1160,7 +996,7 @@ class LLMService:
         """
         return {
             "gemini": bool(config.GOOGLE_API_KEY),
-            "groq": self.groq_client is not None
+            "gpt-5-mini": self.openai_client is not None
         }
     
     def get_performance_stats(self) -> Dict[str, Any]:

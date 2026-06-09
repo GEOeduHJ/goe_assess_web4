@@ -19,6 +19,8 @@ import PyPDF2
 from docx import Document
 import tiktoken
 
+from config import config
+
 
 @dataclass
 class RAGResult:
@@ -44,7 +46,10 @@ class RAGService:
     def __init__(self):
         """HuggingFace 임베딩으로 RAG 서비스 초기화"""
         if not RAGService._initialized:
-            self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+            self.embeddings = HuggingFaceEmbeddings(
+                model_name=config.EMBEDDING_MODEL,
+                encode_kwargs={"normalize_embeddings": config.FAISS_INDEX_TYPE == "IndexFlatIP"}
+            )
             self.vector_store = None
             self.logger = logging.getLogger(__name__)
             # 토큰 기반 청크화를 위한 tiktoken 인코더 초기화
@@ -94,7 +99,7 @@ class RAGService:
         except Exception:
             return False
     
-    def search_relevant_content(self, query: str, k: int = 3) -> List[str]:
+    def search_relevant_content(self, query: str, k: Optional[int] = None) -> List[str]:
         """
         쿼리를 기반으로 관련 내용 검색
         
@@ -109,6 +114,8 @@ class RAGService:
             if not self.vector_store or not query or not query.strip():
                 return []
             
+            k = k or config.TOP_K_RETRIEVAL
+
             # 유사성 검색 수행
             docs = self.vector_store.similarity_search(query.strip(), k=k)
             
@@ -137,7 +144,7 @@ class RAGService:
                     return RAGResult(success=False, error_message="문서 처리 실패")
             
             # 학생 답안을 쿼리로 사용하여 관련 내용 검색
-            relevant_content = self.search_relevant_content(student_answer, k=3)
+            relevant_content = self.search_relevant_content(student_answer)
             
             return RAGResult(
                 success=True,
@@ -162,6 +169,8 @@ class RAGService:
         """
         try:
             file_extension = Path(file_obj.name).suffix.lower()
+            if hasattr(file_obj, "seek"):
+                file_obj.seek(0)
             
             if file_extension == '.pdf':
                 return self._extract_pdf_content(file_obj)
@@ -210,7 +219,12 @@ class RAGService:
         finally:
             os.unlink(tmp_file_path)  
     
-    def _chunk_document(self, content: str, chunk_tokens: int = 500, overlap_tokens: int = 100) -> List[str]:
+    def _chunk_document(
+        self,
+        content: str,
+        chunk_tokens: Optional[int] = None,
+        overlap_tokens: Optional[int] = None
+    ) -> List[str]:
         """
         문서 내용을 토큰 기반으로 겹침 청크로 분할 (텍스트 전처리 적용)
         
@@ -224,6 +238,15 @@ class RAGService:
         """
         if not content or len(content.strip()) == 0:
             return []
+
+        chunk_tokens = chunk_tokens or config.CHUNK_SIZE
+        overlap_tokens = overlap_tokens if overlap_tokens is not None else config.CHUNK_OVERLAP
+        if chunk_tokens <= 0:
+            chunk_tokens = 300
+        if overlap_tokens < 0:
+            overlap_tokens = 0
+        if overlap_tokens >= chunk_tokens:
+            overlap_tokens = max(0, chunk_tokens // 5)
         
         # 🔄 텍스트 전처리: 영어, 한글, 숫자 외 특수 문자 제거
         content = clean_text(content)

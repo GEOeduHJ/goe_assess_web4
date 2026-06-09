@@ -38,6 +38,8 @@ class ExportService:
         """
         if not results:
             raise ValueError("채점 결과가 없어 Excel 파일을 생성할 수 없습니다.")
+
+        self._ensure_relative_grades(results)
         
         # 결과 데이터 검증
         for i, result in enumerate(results):
@@ -245,13 +247,7 @@ class ExportService:
         
         # Grade distribution
         grade_counts = {}
-        # 상대등급 계산 및 설정
-        from models.result_model import GradingResult
-        grade_mapping = GradingResult.calculate_relative_grades(results)
         for result in results:
-            key = f"{result.student_name}_{result.student_class_number}"
-            if key in grade_mapping:
-                result.set_relative_grade(grade_mapping[key])
             grade = result.get_relative_grade()
             grade_counts[grade] = grade_counts.get(grade, 0) + 1
         
@@ -380,6 +376,8 @@ class ExportService:
         """
         if not results:
             return {}
+
+        self._ensure_relative_grades(results)
         
         import statistics
         
@@ -473,6 +471,14 @@ class ExportService:
         # In a real implementation, this would generate a proper download URL
         # For Streamlit, we'll return the file path for use with st.download_button
         return file_path
+
+    def _ensure_relative_grades(self, results: List[GradingResult]) -> None:
+        """모든 export 경로에서 상대등급이 먼저 설정되도록 보장합니다."""
+        grade_mapping = GradingResult.calculate_relative_grades(results)
+        for result in results:
+            key = f"{result.student_name}_{result.student_class_number}"
+            if key in grade_mapping:
+                result.set_relative_grade(grade_mapping[key])
 
 
 def create_export_service() -> ExportService:

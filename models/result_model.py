@@ -153,9 +153,7 @@ class GradingResult:
     @property
     def grade_letter(self) -> str:
         """상대평가 기준 1~5등급을 반환합니다. (별도 계산 필요)"""
-        # 이 속성은 상대평가를 위해 전체 결과와 함께 계산되어야 합니다.
-        # 단일 결과만으로는 상대등급을 결정할 수 없으므로 기본값 반환
-        return "미정"
+        return self.get_relative_grade()
     
     def to_dict(self) -> Dict:
         """채점 결과를 딕셔너리 형식으로 변환합니다."""
