@@ -216,7 +216,7 @@ def render_sidebar():
         api_validation = config.validate_available_api_keys()
         available = api_validation.get("available", {})
         st.write("Gemini:", "✅ 사용 가능" if available.get("gemini") else "❌ 키 없음")
-        st.write("GPT-5 Mini:", "✅ 사용 가능" if available.get("gpt-5-mini") else "❌ 키 없음")
+        st.write("GPT-5.4 Mini:", "✅ 사용 가능" if available.get(config.GPT_MODEL) else "❌ 키 없음")
         
         # 도움말 및 문서
         st.markdown("---")

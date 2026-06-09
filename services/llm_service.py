@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 class LLMModelType:
     """LLM 모델 유형을 위한 열거형 클래스"""
     GEMINI = "gemini"
-    GPT5_MINI = "gpt-5-mini"
+    GPT5_MINI = config.GPT_MODEL
 
 
 class GradingType:
@@ -51,7 +51,7 @@ class LLMService:
     LLM 기반 자동 채점을 위한 서비스
     
     구조화된 프롬프트 생성 및 응답 파싱과 함께 
-    Google Gemini 및 OpenAI GPT-5-mini API를 지원합니다.
+    Google Gemini 및 OpenAI GPT API를 지원합니다.
     """
     
     def __init__(self):
@@ -113,7 +113,7 @@ class LLMService:
         if model_type == LLMModelType.GEMINI and config.GOOGLE_API_KEY:
             return LLMModelType.GEMINI
 
-        if model_type == LLMModelType.GPT5_MINI and self.openai_client:
+        if model_type in {LLMModelType.GPT5_MINI, "gpt-5-mini"} and self.openai_client:
             return LLMModelType.GPT5_MINI
 
         if config.GOOGLE_API_KEY:
@@ -545,7 +545,7 @@ class LLMService:
         max_retries: Optional[int] = None
     ) -> Dict[str, Any]:
         """
-        Call OpenAI GPT-5-mini API for grading.
+        Call OpenAI GPT API for grading.
         
         Args:
             prompt: Grading prompt
@@ -618,7 +618,7 @@ class LLMService:
                 
                 # Call OpenAI API
                 response = self.openai_client.responses.create(
-                    model="gpt-5-mini",
+                    model=config.GPT_MODEL,
                     input=[{
                         "role": "user",
                         "content": input_content
@@ -816,7 +816,7 @@ class LLMService:
                 )
             elif selected_model == LLMModelType.GPT5_MINI:
                 image_path_to_use = student.image_path if grading_type == GradingType.MAP else None
-                print(f"DEBUG: Using GPT-5-mini API for student {student.name}")
+                print(f"DEBUG: Using {config.GPT_MODEL} API for student {student.name}")
                 print(f"DEBUG: Grading type: {grading_type}")
                 print(f"DEBUG: Student image_path: {student.image_path}")
                 print(f"DEBUG: Reference image_path: {reference_image_path}")
@@ -955,7 +955,7 @@ class LLMService:
         """
         return {
             "gemini": self.gemini_client is not None,
-            "gpt-5-mini": self.openai_client is not None
+            config.GPT_MODEL: self.openai_client is not None
         }
     
     def get_performance_stats(self) -> Dict[str, Any]:

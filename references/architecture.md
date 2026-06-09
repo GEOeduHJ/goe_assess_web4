@@ -1,6 +1,6 @@
 # 🏗️ 지리과 자동 채점 플랫폼 아키텍처 (업데이트)
 
-이 문서는 최신 코드 기준(Gemini 2.5 Flash, OpenAI GPT-5 Mini, 설정 기반 RAG)을 반영한 전체 시스템 아키텍처와 데이터 흐름을 설명합니다.
+이 문서는 최신 코드 기준(Gemini 3.1 Flash Lite, OpenAI GPT-5.4 Mini, 설정 기반 RAG)을 반영한 전체 시스템 아키텍처와 데이터 흐름을 설명합니다.
 
 ## 1. 전체 프로젝트 구조
 
@@ -45,8 +45,8 @@ flowchart TD
 
     %% External APIs
     subgraph "🌐 External"
-        GEMINI[Gemini 2.5 Flash]
-        OPENAI[OpenAI GPT-5 Mini]
+        GEMINI[Gemini 3.1 Flash Lite]
+        OPENAI[OpenAI GPT-5.4 Mini]
         HF[HuggingFace<br/>sentence-transformers]
     end
 
@@ -100,8 +100,8 @@ flowchart TD
     SELECT --> DESC{서술형?}
     SELECT --> MAP{백지도형?}
     
-    DESC -->|Yes| MODEL_D[AI 모델 선택<br/>Gemini/GPT-5 Mini]
-    MAP -->|Yes| MODEL_M[AI 모델 선택<br/>Gemini/GPT-5 Mini]
+    DESC -->|Yes| MODEL_D[AI 모델 선택<br/>Gemini/GPT-5.4 Mini]
+    MAP -->|Yes| MODEL_M[AI 모델 선택<br/>Gemini/GPT-5.4 Mini]
     
     MODEL_D --> REF_UPLOAD[참고 문서 업로드<br/>PDF, DOCX]
     MODEL_M --> STUDENT_LIST[학생 목록 업로드<br/>Excel]
@@ -274,7 +274,7 @@ flowchart TD
     subgraph "텍스트 채점"
         TEXT_PROCESS --> RAG_SEARCH[최대 3개 관련 청크]
         RAG_SEARCH --> TEXT_PROMPT[프롬프트 조립]
-        TEXT_PROMPT --> TEXT_LLM[Gemini 또는 GPT-5 Mini]
+        TEXT_PROMPT --> TEXT_LLM[Gemini 또는 GPT-5.4 Mini]
     end
     
     subgraph "이미지 채점 흐름"
@@ -331,10 +331,10 @@ flowchart TD
 
 | 항목 | 내용 |
 |------|------|
-| Gemini 모델 | 고정: `gemini-2.5-flash` (텍스트 + 멀티모달) |
-| OpenAI 모델 | `gpt-5-mini` (텍스트 + 멀티모달) |
+| Gemini 모델 | 고정: `gemini-3.1-flash-lite` (텍스트 + 멀티모달) |
+| OpenAI 모델 | `gpt-5.4-mini` (텍스트 + 멀티모달) |
 | 선택 흐름 | UI(`selected_model`) → `LLMService.select_model()` → provider API 호출 |
-| 이미지 채점 | Gemini 또는 GPT-5 Mini 사용 |
+| 이미지 채점 | Gemini 또는 GPT-5.4 Mini 사용 |
 | max_tokens 정책 | provider SDK 기본값 사용 |
 | 프롬프트 구성 | `LLMService.generate_prompt()` 내부 구현 (JSON 스키마 명시) |
 | 캐싱 | 프롬프트+이미지 해시 기반 메모리 캐시 (TTL: `API_CACHE_TTL_SECONDS`) |
@@ -390,7 +390,7 @@ flowchart TD
 
 ### 🚀 **핵심 기술 스택**
 - **Frontend**: Streamlit
-- **LLM**: Gemini 2.5 Flash (멀티모달), OpenAI GPT-5 Mini
+- **LLM**: Gemini 3.1 Flash Lite (멀티모달), OpenAI GPT-5.4 Mini
 - **RAG**: FAISS + 설정 기반 HuggingFace 임베딩 모델
 - **Data 처리**: Pandas, OpenPyXL
 - **문서 처리**: pypdf, python-docx
@@ -444,8 +444,8 @@ flowchart LR
     end
 
     subgraph EXT[External APIs]
-        G1[Gemini 2.5 Flash]
-        G2[OpenAI GPT-5 Mini]
+        G1[Gemini 3.1 Flash Lite]
+        G2[OpenAI GPT-5.4 Mini]
         HF[HuggingFace Embeddings]
     end
 

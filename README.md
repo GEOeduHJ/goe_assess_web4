@@ -5,7 +5,7 @@
 Streamlit 웹 UI와 Google Gemini 및 OpenAI API를 활용하여 서술형 및 백지도형 답안을 자동으로 채점하고 상세한 피드백을 제공하는 교육용 플랫폼입니다.
 
 **주요 변경사항:**
-- LLM provider를 Google Gemini와 OpenAI GPT-5 Mini로 정리
+- LLM provider를 Google Gemini와 OpenAI GPT-5.4 Mini로 정리
 - RAG 설정이 환경 변수와 `config.py` 값을 따르도록 개선
 
 ## ✨ 주요 기능
@@ -23,8 +23,8 @@ Streamlit 웹 UI와 Google Gemini 및 OpenAI API를 활용하여 서술형 및 �
  - **이미지 분석 및 지도 문항 채점**: 백지도형 이미지 업로드, 참조 이미지 비교, AI 기반 지도 답안 평가
 
 ### 🤖 실제 AI 모델 지원
-- **Google Gemini 2.5 Flash**: 텍스트/이미지 멀티모달 채점
-- **OpenAI GPT-5 Mini**: 텍스트/이미지 채점 (UI에서 선택 가능)
+- **Google Gemini 3.1 Flash Lite**: 텍스트/이미지 멀티모달 채점
+- **OpenAI GPT-5.4 Mini**: 텍스트/이미지 채점 (UI에서 선택 가능)
 - **KURE-v1 Embedding**: 한국어 문서 벡터 임베딩 및 검색
 
 ## 🚀 설치 및 실행
@@ -107,7 +107,7 @@ geo_assess_web4/
 - **기능:** 한 페이지에서 채점 유형(텍스트/백지도형) 선택, AI 모델 선택, 파일 업로드까지 모두 수행
 - **사용자 입력/작업:**
 	- 채점 유형 선택: "📝 텍스트 문항" 또는 "🗺️ 백지도형 문항" 버튼 클릭
-	- AI 모델 선택: Gemini 또는 GPT-5 Mini 중 선택
+	- AI 모델 선택: Gemini 또는 GPT-5.4 Mini 중 선택
 	- 파일 업로드:
 		- 텍스트 문항: 참고 문서(PDF/DOCX, 선택), 학생 답안 Excel(필수, 학생명/반/답안)
 		- 백지도형 문항: 모범 답안 이미지(필수), 학생 목록 Excel(필수, 학생명/반), 학생 답안 이미지들(필수, 파일명에 학생명 포함)

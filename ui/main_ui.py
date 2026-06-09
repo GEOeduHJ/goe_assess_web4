@@ -10,6 +10,8 @@ from enum import Enum
 
 import streamlit as st
 
+from config import config
+
 logger = logging.getLogger(__name__)
 
 
@@ -37,7 +39,7 @@ class GradingType(Enum):
 
 class LLMModel(Enum):
     GEMINI = "gemini"
-    GPT5_MINI = "gpt-5-mini"
+    GPT5_MINI = config.GPT_MODEL
 
 
 class MainUI:
@@ -137,12 +139,12 @@ class MainUI:
 
         model_options = {
             LLMModel.GEMINI.value: {
-                "name": "Google Gemini 2.5 Flash",
+                "name": "Google Gemini 3.1 Flash Lite",
                 "description": "Google의 멀티모달 AI 모델입니다.",
                 "icon": "🔥",
             },
             LLMModel.GPT5_MINI.value: {
-                "name": "OpenAI GPT-5 Mini",
+                "name": "OpenAI GPT-5.4 Mini",
                 "description": "OpenAI의 추론 모델입니다.",
                 "icon": "⚡",
             },
@@ -260,7 +262,7 @@ class MainUI:
             st.error("❌ 채점 유형을 선택해주세요")
 
         if st.session_state.selected_model:
-            model_name = "Google Gemini 2.5 Flash" if st.session_state.selected_model == LLMModel.GEMINI.value else "OpenAI GPT-5 Mini"
+            model_name = "Google Gemini 3.1 Flash Lite" if st.session_state.selected_model == LLMModel.GEMINI.value else "OpenAI GPT-5.4 Mini"
             st.success(f"✅ LLM 모델: {model_name}")
         else:
             st.error("❌ LLM 모델을 선택해주세요")

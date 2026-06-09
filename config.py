@@ -26,11 +26,19 @@ def get_config_value(key: str, default=None):
             else:
                 # 단순 키의 대체 방법
                 return st.secrets.get(key.lower(), os.getenv(key, default))
-        except (KeyError, AttributeError):
+        except Exception:
             pass
     
     # 환경 변수로 대체
     return os.getenv(key, default)
+
+
+def get_model_config_value(key: str, default: str, legacy_values: set[str] | None = None) -> str:
+    """모델 설정값을 가져오되, 이전 기본 모델명은 현재 기본값으로 정규화합니다."""
+    value = os.getenv(key) or get_config_value(key, default)
+    if legacy_values and value in legacy_values:
+        return default
+    return value
 
 
 class Config:
@@ -44,7 +52,16 @@ class Config:
     # 애플리케이션 설정
     APP_TITLE: str = get_config_value("APP_TITLE", "자동 채점 플랫폼")
     MAX_FILE_SIZE_MB: int = int(get_config_value("MAX_FILE_SIZE_MB", "100"))
-    GEMINI_MODEL: str = get_config_value("GEMINI_MODEL", "gemini-2.5-flash")
+    GEMINI_MODEL: str = get_model_config_value(
+        "GEMINI_MODEL",
+        "gemini-3.1-flash-lite",
+        legacy_values={"gemini-2.5-flash"},
+    )
+    GPT_MODEL: str = get_model_config_value(
+        "GPT_MODEL",
+        "gpt-5.4-mini",
+        legacy_values={"gpt-5-mini"},
+    )
     EMBEDDING_MODEL: str = get_config_value("EMBEDDING_MODEL", "nlpai-lab/KURE-v1")
     FAISS_INDEX_TYPE: str = get_config_value("FAISS_INDEX_TYPE", "IndexFlatIP")
     
@@ -79,7 +96,7 @@ class Config:
         """
         available = {
             "gemini": bool(cls.GOOGLE_API_KEY),
-            "gpt-5-mini": bool(cls.OPENAI_API_KEY),
+            cls.GPT_MODEL: bool(cls.OPENAI_API_KEY),
         }
         return {
             "valid": any(available.values()),
@@ -98,6 +115,7 @@ class Config:
         """선택된 모델에 필요한 API 키가 있는지 검증합니다."""
         required = {
             "gemini": ("GOOGLE_API_KEY", cls.GOOGLE_API_KEY),
+            cls.GPT_MODEL: ("OPENAI_API_KEY", cls.OPENAI_API_KEY),
             "gpt-5-mini": ("OPENAI_API_KEY", cls.OPENAI_API_KEY),
         }
         if model_type not in required:
@@ -123,7 +141,7 @@ class Config:
         """UI에서 사용할 수 있는 모델 상태를 반환합니다."""
         return {
             "gemini": bool(cls.GOOGLE_API_KEY),
-            "gpt-5-mini": bool(cls.OPENAI_API_KEY),
+            cls.GPT_MODEL: bool(cls.OPENAI_API_KEY),
         }
     
     @classmethod

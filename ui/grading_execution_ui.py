@@ -257,9 +257,9 @@ class GradingExecutionUI:
         with col3:
             # Map model type to display name
             if session.model_type == "gemini":
-                model_name = "Gemini 2.5 Flash"
-            elif session.model_type == "gpt-5-mini":
-                model_name = "GPT-5 Mini"
+                model_name = "Gemini 3.1 Flash Lite"
+            elif session.model_type in {config.GPT_MODEL, "gpt-5-mini"}:
+                model_name = "GPT-5.4 Mini"
             else:
                 model_name = session.model_type
             st.metric("AI 모델", model_name)
@@ -556,10 +556,10 @@ class GradingExecutionUI:
         # Switch model
         if session.model_type == "gemini":
             if not config.OPENAI_API_KEY:
-                st.warning("OpenAI API 키가 없어 GPT-5 Mini로 전환할 수 없습니다.")
+                st.warning("OpenAI API 키가 없어 GPT-5.4 Mini로 전환할 수 없습니다.")
                 return
-            new_model = "gpt-5-mini"
-            st.info("🔄 GPT-5 Mini로 전환하여 재시도합니다...")
+            new_model = config.GPT_MODEL
+            st.info("🔄 GPT-5.4 Mini로 전환하여 재시도합니다...")
         else:
             if not config.GOOGLE_API_KEY:
                 st.warning("Google API 키가 없어 Gemini로 전환할 수 없습니다.")
