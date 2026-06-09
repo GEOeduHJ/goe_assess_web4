@@ -1,32 +1,24 @@
-"""
-지리 자동 채점 시스템의 순차 채점 실행 엔진
+"""Sequential grading engine for geography auto-grading."""
+from __future__ import annotations
 
-이 모듈은 실시간 진행 상황 추적, 오류 처리, 재시도 메커니즘을 통해
-여러 학생의 채점 프로세스를 조율하는 핵심 순차 채점 실행 엔진을 제공합니다.
-"""
-
-import time
 import logging
-from typing import List, Dict, Optional, Callable, Any
-from dataclasses import dataclass, field
+import time
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from typing import Any, Callable, Dict, List, Optional
 
-from models.student_model import Student
-from models.rubric_model import Rubric
-from models.result_model import GradingResult, GradingTimer
-from services.llm_service import LLMService, GradingType
-from services.rag_service import RAGService
 from config import config
+from models.result_model import GradingResult
+from models.rubric_model import Rubric
+from models.student_model import Student
+from services.llm_service import GradingType, LLMService
+from services.rag_service import RAGService
 
-
-# 로깅 설정
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class GradingStatus(Enum):
-    """채점 상태를 나타내는 열거형"""
     NOT_STARTED = "not_started"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
@@ -36,18 +28,6 @@ class GradingStatus(Enum):
 
 @dataclass
 class StudentGradingStatus:
-    """
-    개별 학생의 채점 상태를 나타냅니다.
-    
-    Attributes:
-        student: 채점 중인 학생
-        status: 현재 채점 상태
-        result: 채점 결과 (완료된 경우)
-        error_message: 오류 메시지 (실패한 경우)
-        attempt_count: 채점 시도 횟수
-        start_time: 채점 시작 시간
-        end_time: 채점 완료/실패 시간
-    """
     student: Student
     status: GradingStatus = GradingStatus.NOT_STARTED
     result: Optional[GradingResult] = None
@@ -55,10 +35,9 @@ class StudentGradingStatus:
     attempt_count: int = 0
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
-    
+
     @property
     def processing_time(self) -> float:
-        """처리 시간을 초 단위로 가져옵니다."""
         if self.start_time and self.end_time:
             return (self.end_time - self.start_time).total_seconds()
         return 0.0
@@ -66,98 +45,61 @@ class StudentGradingStatus:
 
 @dataclass
 class GradingProgress:
-    """
-    전체 채점 진행 상황을 나타냅니다.
-    
-    Attributes:
-        total_students: 채점할 총 학생 수
-        completed_students: 완료된 학생 수
-        failed_students: 실패한 학생 수
-        current_student_index: 현재 처리 중인 학생 인덱스
-        start_time: 배치 채점 시작 시간
-        estimated_completion_time: 예상 완료 시간
-        average_processing_time: 학생당 평균 처리 시간
-    """
     total_students: int
     completed_students: int = 0
     failed_students: int = 0
     current_student_index: int = 0
     start_time: Optional[datetime] = None
-    estimated_completion_time: Optional[datetime] = None
+    estimated_completion_time: Optional[float] = None
     average_processing_time: float = 0.0
-    
+    current_student_name: str = ""
+    current_student_class: str = ""
+
     @property
     def progress_percentage(self) -> float:
-        """진행률 퍼센트를 계산합니다."""
         if self.total_students == 0:
             return 0.0
         return ((self.completed_students + self.failed_students) / self.total_students) * 100
-    
+
     @property
     def remaining_students(self) -> int:
-        """남은 학생 수를 가져옵니다."""
         return self.total_students - self.completed_students - self.failed_students
-    
-    def update_estimates(self, processing_times: List[float]):
-        """완료된 처리 시간을 기반으로 시간 추정치를 업데이트합니다."""
+
+    def update_estimates(self, processing_times: List[float]) -> None:
         if processing_times:
             self.average_processing_time = sum(processing_times) / len(processing_times)
-            
             if self.remaining_students > 0:
-                estimated_remaining_seconds = self.remaining_students * self.average_processing_time
-                self.estimated_completion_time = datetime.now().timestamp() + estimated_remaining_seconds
+                self.estimated_completion_time = time.time() + self.remaining_students * self.average_processing_time
 
 
 class SequentialGradingEngine:
-    """
-    진행 상황 추적 및 오류 처리 기능이 있는 순차 채점 실행 엔진
-    
-    이 엔진은 여러 학생의 채점 프로세스를 조율하며,
-    실시간 진행 상황 업데이트, 오류 복구, 상세 로깅을 제공합니다.
-    """
-    
     def __init__(self, llm_service: Optional[LLMService] = None):
-        """
-        채점 엔진을 초기화합니다.
-        
-        Args:
-            llm_service: 선택적 LLM 서비스 인스턴스 (제공되지 않으면 새로 생성)
-        """
         self.llm_service = llm_service or LLMService()
         self.is_cancelled = False
         self.current_batch_id = None
-        
-        # 진행 상황 추적
         self.student_statuses: List[StudentGradingStatus] = []
         self.progress: Optional[GradingProgress] = None
-        
-        # Callbacks
-        self.progress_callback: Optional[Callable] = None
-        self.student_completed_callback: Optional[Callable] = None
-        self.grading_completed_callback: Optional[Callable] = None
-        self.error_callback: Optional[Callable] = None
-    
+        self.progress_callback: Optional[Callable[[GradingProgress], None]] = None
+        self.student_completed_callback: Optional[Callable[[StudentGradingStatus], None]] = None
+        self.grading_completed_callback: Optional[Callable[[int], None]] = None
+        self.error_callback: Optional[Callable[[str, Exception], None]] = None
+
     def set_progress_callback(self, callback: Callable[[GradingProgress], None]):
-        """Set callback for progress updates."""
         self.progress_callback = callback
-    
+
     def set_student_completed_callback(self, callback: Callable[[StudentGradingStatus], None]):
-        """Set callback for individual student completion."""
         self.student_completed_callback = callback
-    
+
     def set_grading_completed_callback(self, callback: Callable[[int], None]):
-        """Set callback for overall grading completion."""
         self.grading_completed_callback = callback
-    
+
     def set_error_callback(self, callback: Callable[[str, Exception], None]):
-        """Set callback for error handling."""
         self.error_callback = callback
-    
+
     def cancel_grading(self):
-        """Cancel the current grading process."""
         self.is_cancelled = True
-        logger.info("Grading process cancellation requested")
-    
+        logger.info("Grading cancellation requested")
+
     def grade_students_sequential(
         self,
         students: List[Student],
@@ -167,167 +109,88 @@ class SequentialGradingEngine:
         references: Optional[List[str]] = None,
         max_retries: Optional[int] = None,
         uploaded_files: Optional[List] = None,
-        reference_image_path: Optional[str] = None
+        reference_image_path: Optional[str] = None,
     ) -> List[GradingResult]:
-        """
-        Grade multiple students sequentially with comprehensive progress tracking.
-        
-        Args:
-            students: List of students to grade
-            rubric: Evaluation rubric
-            model_type: LLM model to use
-            grading_type: Type of grading (descriptive/map)
-            references: Reference materials from RAG
-            max_retries: Maximum retry attempts per student
-            uploaded_files: Uploaded reference files for on-demand RAG processing
-            reference_image_path: Path to reference answer image for map grading
-            
-        Returns:
-            List of grading results
-        """
-        # Initialize grading session
         self.current_batch_id = f"batch_{int(time.time())}"
         self.is_cancelled = False
         max_retries = max_retries or config.MAX_RETRIES
-        
-        # Initialize progress tracking
         self._initialize_progress_tracking(students)
-        
-        logger.info(f"Starting sequential grading for {len(students)} students (batch: {self.current_batch_id})")
-        
-        # --- 개선: 서술형 채점 시 RAG 인덱스를 한 번만 생성 (청크화 + 임베딩) ---
-        rag_service_instance = None
-        if grading_type == "descriptive" and uploaded_files:
-            try:
-                logger.info("Building RAG index once from uploaded files (chunking + embedding)...")
-                rag_service_instance = RAGService()
-                # process_documents: 토큰 기반 청크화(500) + 임베딩을 1회만 수행
-                success = rag_service_instance.process_documents(uploaded_files)
-                if success:
-                    logger.info("RAG index built successfully - ready for student queries")
-                else:
-                    logger.warning("RAG index creation failed - will use fallback per-student processing")
-                    rag_service_instance = None
-            except Exception as e:
-                logger.warning(f"RAG indexing error: {e} - will use fallback per-student processing")
-                rag_service_instance = None
-        
-        results = []
-        processing_times = []
-        
-        try:
-            for i, student in enumerate(students):
-                if self.is_cancelled:
-                    logger.info("Grading cancelled by user")
-                    break
-                
-                # Update current student index and info
-                self.progress.current_student_index = i
-                self.progress.current_student_name = student.name
-                self.progress.current_student_class = student.class_number
-                self._notify_progress_update()
-                
-                # Get student status
-                student_status = self.student_statuses[i]
-                
-                # Grade individual student with retries
-                result = self._grade_student_with_retries(
-                    student_status=student_status,
-                    rubric=rubric,
-                    model_type=model_type,
-                    grading_type=grading_type,
-                    references=references,
-                    max_retries=max_retries,
-                    uploaded_files=uploaded_files,  # Fallback용으로 유지
-                    rag_service=rag_service_instance,  # 사전 생성된 RAG 인스턴스 전달 (검색만 수행)
-                    reference_image_path=reference_image_path
-                )
-                
-                # Always append result (even error results)
-                if result:
-                    results.append(result)
-                    processing_times.append(result.grading_time_seconds)
-                    
-                    # Check if this was a successful grading or an error result
-                    if student_status.status == GradingStatus.COMPLETED:
-                        self.progress.completed_students += 1
-                    else:
-                        self.progress.failed_students += 1
-                else:
-                    failed_result = self._create_failed_result(
-                        student,
-                        rubric,
-                        "알 수 없는 오류로 채점 결과가 생성되지 않았습니다."
-                    )
-                    student_status.result = failed_result
-                    results.append(failed_result)
-                    self.progress.failed_students += 1
-                
-                # Update time estimates
-                self.progress.update_estimates(processing_times)
-                
-                # Notify callbacks
-                self._notify_progress_update()
-                if self.student_completed_callback:
-                    self.student_completed_callback(student_status)
-                
-                logger.info(f"Completed {i + 1}/{len(students)} students")
-        
-        except Exception as e:
-            logger.error(f"Critical error in grading process: {e}")
-            if self.error_callback:
-                self.error_callback("Critical grading error", e)
-            raise
-        
-        finally:
-            # Finalize progress and notify completion
-            if self.progress:
-                if not self.is_cancelled:
-                    logger.info(f"Sequential grading completed. {len(results)}/{len(students)} students graded successfully")
-                    # Only notify grading completion callback (not progress callback)
-                    if self.grading_completed_callback:
-                        logger.info(f"Calling grading completion callback with {len(results)} results")
-                        self.grading_completed_callback(len(results))
-                    else:
-                        logger.warning("No grading completion callback set!")
-                else:
-                    logger.info(f"Sequential grading cancelled. {len(results)}/{len(students)} students completed before cancellation")
-        
-        return results
-    
-    def _initialize_progress_tracking(self, students: List[Student]):
-        """Initialize progress tracking structures."""
-        self.progress = GradingProgress(
-            total_students=len(students),
-            start_time=datetime.now()
-        )
-        
-        self.student_statuses = [
-            StudentGradingStatus(student=student)
-            for student in students
-        ]
 
-    def _create_failed_result(self, student: Student, rubric: Rubric, error_message: str) -> GradingResult:
-        """최종 실패 학생도 결과 목록과 export에 남기기 위한 오류 결과를 생성합니다."""
+        rag_service = None
+        if grading_type == GradingType.DESCRIPTIVE and uploaded_files:
+            rag_service = RAGService()
+            if not rag_service.process_documents(uploaded_files):
+                rag_service = None
+
+        results: List[GradingResult] = []
+        processing_times: List[float] = []
+        for index, student_status in enumerate(self.student_statuses):
+            if self.is_cancelled:
+                student_status.status = GradingStatus.CANCELLED
+                break
+
+            assert self.progress is not None
+            self.progress.current_student_index = index
+            self.progress.current_student_name = student_status.student.name
+            self.progress.current_student_class = student_status.student.class_number
+            self._notify_progress_update()
+
+            result = self._grade_student_with_retries(
+                student_status=student_status,
+                rubric=rubric,
+                model_type=model_type,
+                grading_type=grading_type,
+                references=references,
+                max_retries=max_retries,
+                uploaded_files=uploaded_files,
+                rag_service=rag_service,
+                reference_image_path=reference_image_path,
+            )
+            if result is None:
+                result = self._create_failed_result(student_status.student, rubric, "No grading result was produced")
+                student_status.result = result
+                student_status.status = GradingStatus.FAILED
+
+            results.append(result)
+            processing_times.append(result.grading_time_seconds)
+            if student_status.status == GradingStatus.COMPLETED and result.status == "success":
+                self.progress.completed_students += 1
+            else:
+                self.progress.failed_students += 1
+
+            self.progress.update_estimates(processing_times)
+            self._notify_progress_update()
+            if self.student_completed_callback:
+                self.student_completed_callback(student_status)
+
+        if self.progress and not self.is_cancelled and self.grading_completed_callback:
+            self.grading_completed_callback(len(results))
+        return results
+
+    def _initialize_progress_tracking(self, students: List[Student]):
+        self.progress = GradingProgress(total_students=len(students), start_time=datetime.now())
+        self.student_statuses = [StudentGradingStatus(student=student) for student in students]
+
+    def _create_failed_result(self, student: Student, rubric: Rubric, error_message: str, elapsed: float = 0.0) -> GradingResult:
         result = GradingResult(
             student_name=student.name,
             student_class_number=student.class_number,
             original_answer=student.answer or student.image_path or "",
-            grading_time_seconds=0.0,
-            overall_feedback=f"채점 중 오류가 발생했습니다: {error_message}"
+            grading_time_seconds=elapsed,
+            overall_feedback=f"채점 중 오류가 발생했습니다: {error_message}",
+            status="failed",
+            error_message=error_message,
         )
-
         for element in rubric.elements:
             result.add_element_score(
                 element_name=element.name,
                 score=0,
                 max_score=element.max_score,
                 feedback="채점 오류로 인해 점수를 부여할 수 없습니다.",
-                reasoning="최대 재시도 후에도 채점 처리 실패"
+                reasoning="최대 재시도 후에도 채점 처리 실패",
             )
-
         return result
-    
+
     def _grade_student_with_retries(
         self,
         student_status: StudentGradingStatus,
@@ -336,206 +199,99 @@ class SequentialGradingEngine:
         grading_type: str,
         references: Optional[List[str]],
         max_retries: int,
-        uploaded_files: Optional[List] = None,  # Fallback용 파라미터 (기존 호환성 유지)
-        rag_service: Optional[RAGService] = None,  # 사전 생성된 RAG 인스턴스 (검색만 수행)
-        reference_image_path: Optional[str] = None
+        uploaded_files: Optional[List] = None,
+        rag_service: Optional[RAGService] = None,
+        reference_image_path: Optional[str] = None,
     ) -> Optional[GradingResult]:
-        """
-        Grade a single student with retry mechanism.
-        
-        Args:
-            student_status: Student grading status object
-            rubric: Evaluation rubric
-            model_type: LLM model to use
-            grading_type: Type of grading
-            references: Reference materials
-            max_retries: Maximum retry attempts
-            uploaded_files: Uploaded reference files for fallback on-demand RAG processing
-            rag_service: Pre-built RAG service instance (performs search only, no re-indexing)
-            reference_image_path: Path to reference answer image for map grading
-            
-        Returns:
-            Grading result if successful, None if failed
-        """
         student = student_status.student
-        
         for attempt in range(max_retries + 1):
             if self.is_cancelled:
                 student_status.status = GradingStatus.CANCELLED
                 return None
-            
             student_status.attempt_count = attempt + 1
             student_status.status = GradingStatus.IN_PROGRESS
             student_status.start_time = datetime.now()
-            
             try:
-                logger.info(f"Grading student {student.name} (attempt {attempt + 1}/{max_retries + 1})")
-                
-                # --- 개선: 사전 생성된 RAG 인덱스에서 검색만 수행 (청크화/임베딩 재수행 안 함) ---
                 processed_references = references
-                if grading_type == "descriptive" and student.has_text_answer:
+                if grading_type == GradingType.DESCRIPTIVE and student.has_text_answer:
                     if rag_service and rag_service.vector_store:
-                        # 사전 생성된 RAG 인덱스에서 검색만 수행 (효율적)
-                        try:
-                            logger.info(f"Searching RAG index for student {student.name} answer...")
-                            retrieved_chunks = rag_service.search_relevant_content(student.answer)
-                            if retrieved_chunks:
-                                # 청크 리스트를 그대로 전달 (문자열이 아닌 리스트로!)
-                                processed_references = retrieved_chunks
-                                logger.info(f"Found {len(retrieved_chunks)} relevant chunks for {student.name}")
-                            else:
-                                logger.warning(f"No relevant chunks found for {student.name}")
-                        except Exception as e:
-                            logger.warning(f"RAG search error for {student.name}: {e}")
+                        retrieved = rag_service.search_relevant_content(student.answer)
+                        if retrieved:
+                            processed_references = retrieved
                     elif uploaded_files:
-                        # Fallback: 기존 방식 (per-student 인덱싱) - 호환성 유지
-                        try:
-                            logger.info(f"Using fallback per-student RAG processing for {student.name}")
-                            fallback_rag = RAGService()
-                            rag_result = fallback_rag.process_documents_for_student(
-                                uploaded_files, 
-                                student.answer
-                            )
-                            
-                            if rag_result.success:
-                                # rag_result.content는 이미 리스트 형태
-                                processed_references = rag_result.content
-                            else:
-                                logger.warning(f"Fallback RAG failed for {student.name}: {rag_result.error_message}")
-                        except Exception as e:
-                            logger.warning(f"Fallback RAG error for {student.name}: {e}")
-                
+                        fallback_rag = RAGService()
+                        rag_result = fallback_rag.process_documents_for_student(uploaded_files, student.answer)
+                        if rag_result.success:
+                            processed_references = rag_result.content
+
                 result = self.llm_service.grade_student_sequential(
                     student=student,
                     rubric=rubric,
                     model_type=model_type,
                     grading_type=grading_type,
                     references=processed_references,
-                    reference_image_path=reference_image_path
+                    reference_image_path=reference_image_path,
                 )
-                
-                # Check if this is an error result (total_score = 0 and error message in feedback)
-                is_error_result = (
-                    result.total_score == 0 and 
-                    "채점 중 오류가 발생했습니다" in result.overall_feedback
-                )
-                
-                if is_error_result:
-                    # Treat as failure and retry
-                    error_msg = result.overall_feedback
-                    raise Exception(error_msg)
-                
-                # Success
                 student_status.end_time = datetime.now()
-                student_status.status = GradingStatus.COMPLETED
                 student_status.result = result
-                
-                logger.info(f"Successfully graded student {student.name} in {result.grading_time_seconds:.2f}s")
-                return result
-                
-            except Exception as e:
+                if result.status == "success":
+                    student_status.status = GradingStatus.COMPLETED
+                    return result
+                raise Exception(result.error_message or result.overall_feedback)
+            except Exception as exc:
                 student_status.end_time = datetime.now()
-                error_msg = f"Attempt {attempt + 1} failed: {str(e)}"
-                student_status.error_message = error_msg
-                
-                logger.warning(f"Failed to grade student {student.name} on attempt {attempt + 1}: {e}")
-                
+                student_status.error_message = f"Attempt {attempt + 1} failed: {exc}"
                 if attempt < max_retries:
-                    # Wait before retry with exponential backoff
-                    retry_delay = config.RETRY_DELAY ** attempt
-                    logger.info(f"Retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                else:
-                    # Final failure
-                    student_status.status = GradingStatus.FAILED
-                    logger.error(f"Failed to grade student {student.name} after {max_retries + 1} attempts")
-                    
-                    if self.error_callback:
-                        self.error_callback(f"Failed to grade student {student.name}", e)
-
-                    failed_result = self._create_failed_result(student, rubric, str(e))
-                    student_status.result = failed_result
-                    return failed_result
-        
+                    time.sleep(config.RETRY_DELAY ** attempt)
+                    continue
+                student_status.status = GradingStatus.FAILED
+                if self.error_callback:
+                    self.error_callback(f"Failed to grade student {student.name}", exc)
+                failed = self._create_failed_result(student, rubric, str(exc), student_status.processing_time)
+                student_status.result = failed
+                return failed
         return None
-    
+
     def _notify_progress_update(self):
-        """Notify progress callback if set."""
         if self.progress_callback and self.progress:
-            try:
-                self.progress_callback(self.progress)
-            except Exception as e:
-                logger.warning(f"Progress callback failed: {e}")
-    
+            self.progress_callback(self.progress)
+
     def get_grading_summary(self) -> Dict[str, Any]:
-        """
-        Get comprehensive grading summary.
-        
-        Returns:
-            Dictionary with grading statistics and details
-        """
         if not self.progress or not self.student_statuses:
             return {"error": "No grading session in progress"}
-        
-        # Calculate statistics
-        successful_results = [s for s in self.student_statuses if s.status == GradingStatus.COMPLETED]
-        failed_results = [s for s in self.student_statuses if s.status == GradingStatus.FAILED]
-        
-        processing_times = [s.result.grading_time_seconds for s in successful_results if s.result]
-        
-        summary = {
+        return {
             "batch_id": self.current_batch_id,
             "total_students": self.progress.total_students,
             "completed_students": self.progress.completed_students,
             "failed_students": self.progress.failed_students,
             "progress_percentage": self.progress.progress_percentage,
             "average_processing_time": self.progress.average_processing_time,
-            "total_processing_time": sum(processing_times) if processing_times else 0.0,
             "success_rate": (self.progress.completed_students / self.progress.total_students * 100) if self.progress.total_students > 0 else 0.0,
             "is_cancelled": self.is_cancelled,
             "start_time": self.progress.start_time.isoformat() if self.progress.start_time else None,
-            "estimated_completion": self.progress.estimated_completion_time if self.progress.estimated_completion_time else None
+            "estimated_completion": self.progress.estimated_completion_time,
+            "student_details": [
+                {
+                    "student_name": status.student.name,
+                    "status": status.status.value,
+                    "attempt_count": status.attempt_count,
+                    "processing_time": status.processing_time,
+                    "error_message": status.error_message,
+                    "total_score": status.result.total_score if status.result else None,
+                    "total_max_score": status.result.total_max_score if status.result else None,
+                    "percentage": status.result.percentage if status.result else None,
+                    "grade_letter": status.result.grade_letter if status.result else None,
+                }
+                for status in self.student_statuses
+            ],
         }
-        
-        # Add detailed student results
-        summary["student_details"] = []
-        for status in self.student_statuses:
-            detail = {
-                "student_name": status.student.name,
-                "status": status.status.value,
-                "attempt_count": status.attempt_count,
-                "processing_time": status.processing_time,
-                "error_message": status.error_message
-            }
-            
-            if status.result:
-                detail.update({
-                    "total_score": status.result.total_score,
-                    "total_max_score": status.result.total_max_score,
-                    "percentage": status.result.percentage,
-                    "grade_letter": status.result.grade_letter
-                })
-            
-            summary["student_details"].append(detail)
-        
-        return summary
-    
+
     def get_successful_results(self) -> List[GradingResult]:
-        """Get all successful grading results."""
-        return [
-            status.result 
-            for status in self.student_statuses 
-            if status.status == GradingStatus.COMPLETED and status.result
-        ]
-    
+        return [status.result for status in self.student_statuses if status.status == GradingStatus.COMPLETED and status.result]
+
     def get_failed_students(self) -> List[StudentGradingStatus]:
-        """Get all failed student statuses."""
-        return [
-            status 
-            for status in self.student_statuses 
-            if status.status == GradingStatus.FAILED
-        ]
-    
+        return [status for status in self.student_statuses if status.status == GradingStatus.FAILED]
+
     def retry_failed_students(
         self,
         rubric: Rubric,
@@ -544,39 +300,16 @@ class SequentialGradingEngine:
         references: Optional[List[str]] = None,
         max_retries: Optional[int] = None,
         uploaded_files: Optional[List] = None,
-        reference_image_path: Optional[str] = None
+        reference_image_path: Optional[str] = None,
     ) -> List[GradingResult]:
-        """
-        Retry grading for failed students only.
-        
-        Args:
-            rubric: Evaluation rubric
-            model_type: LLM model to use
-            grading_type: Type of grading
-            references: Reference materials
-            max_retries: Maximum retry attempts
-            uploaded_files: Uploaded reference files for on-demand RAG processing
-            reference_image_path: Path to reference answer image for map grading
-            
-        Returns:
-            List of newly successful results
-        """
         failed_statuses = self.get_failed_students()
-        if not failed_statuses:
-            logger.info("No failed students to retry")
-            return []
-        
-        logger.info(f"Retrying {len(failed_statuses)} failed students")
-        
-        new_results = []
+        new_results: List[GradingResult] = []
         max_retries = max_retries or config.MAX_RETRIES
-        
         for status in failed_statuses:
-            # Reset status for retry
             status.status = GradingStatus.NOT_STARTED
             status.error_message = None
             status.attempt_count = 0
-            
+            previous_status = status.status
             result = self._grade_student_with_retries(
                 student_status=status,
                 rubric=rubric,
@@ -584,66 +317,33 @@ class SequentialGradingEngine:
                 grading_type=grading_type,
                 references=references,
                 max_retries=max_retries,
-                uploaded_files=uploaded_files,  # Fallback용으로 유지
-                rag_service=None,  # retry 시에는 RAG 인스턴스 없음 (fallback 사용)
-                reference_image_path=reference_image_path
+                uploaded_files=uploaded_files,
+                rag_service=None,
+                reference_image_path=reference_image_path,
             )
-            
             if result:
                 new_results.append(result)
-                self.progress.completed_students += 1
-                self.progress.failed_students -= 1
-        
-        logger.info(f"Retry completed: {len(new_results)} additional students graded successfully")
+                if self.progress and result.status == "success":
+                    self.progress.completed_students += 1
+                    self.progress.failed_students = max(0, self.progress.failed_students - 1)
+                elif self.progress and previous_status != GradingStatus.FAILED:
+                    self.progress.failed_students += 1
         return new_results
-    
-    def validate_grading_setup(
-        self,
-        students: List[Student],
-        rubric: Rubric,
-        model_type: str,
-        grading_type: str
-    ) -> Dict[str, Any]:
-        """
-        Validate grading setup before starting.
-        
-        Args:
-            students: List of students to validate
-            rubric: Rubric to validate
-            model_type: Model type to validate
-            grading_type: Grading type to validate
-            
-        Returns:
-            Validation results dictionary
-        """
-        validation_results = {
-            "valid": True,
-            "errors": [],
-            "warnings": []
-        }
-        
-        # Validate students
+
+    def validate_grading_setup(self, students: List[Student], rubric: Rubric, model_type: str, grading_type: str) -> Dict[str, Any]:
+        validation_results = {"valid": True, "errors": [], "warnings": []}
         if not students:
             validation_results["errors"].append("No students provided for grading")
             validation_results["valid"] = False
-        
-        for i, student in enumerate(students):
+        for index, student in enumerate(students):
             try:
                 student._validate_data()
-            except ValueError as e:
-                validation_results["errors"].append(f"Student {i+1} ({student.name}): {e}")
+            except ValueError as exc:
+                validation_results["errors"].append(f"Student {index + 1} ({student.name}): {exc}")
                 validation_results["valid"] = False
-        
-        # Validate rubric
-        try:
-            if not rubric.elements:
-                validation_results["errors"].append("Rubric has no evaluation elements")
-                validation_results["valid"] = False
-        except Exception as e:
-            validation_results["errors"].append(f"Rubric validation failed: {e}")
+        if not rubric.elements:
+            validation_results["errors"].append("Rubric has no evaluation elements")
             validation_results["valid"] = False
-        
-        # Validate selected model API key.
         api_status = self.llm_service.validate_api_availability()
         if model_type not in api_status:
             validation_results["errors"].append(f"Unsupported model type: {model_type}")
@@ -651,14 +351,10 @@ class SequentialGradingEngine:
         elif not api_status[model_type]:
             validation_results["errors"].append(f"{model_type} API not available")
             validation_results["valid"] = False
-        
-        # Add warnings
         if len(students) > 50:
             validation_results["warnings"].append(f"Large batch size ({len(students)} students) may take significant time")
-        
         if grading_type == GradingType.MAP:
-            missing_images = [s.name for s in students if not s.has_image_answer]
+            missing_images = [student.name for student in students if not student.has_image_answer]
             if missing_images:
                 validation_results["warnings"].append(f"Students without images: {', '.join(missing_images[:5])}")
-        
         return validation_results
