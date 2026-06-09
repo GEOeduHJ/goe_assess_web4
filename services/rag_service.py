@@ -1,241 +1,223 @@
 """
 지리 자동 채점 시스템의 RAG (검색 증강 생성) 서비스
 
-문서 처리 및 유사성 검색을 위해 LangChain FAISS를 사용하는 간소화된 RAG 서비스입니다.
+업로드된 참고자료를 문서 청크로 변환하고 FAISS 기반 유사도 검색을 제공합니다.
+RAGService는 세션 간 stale vector store 재사용을 피하기 위해 싱글턴으로 동작하지 않습니다.
 """
 
 import os
-import tempfile
 import re
-from typing import List, Optional
+import tempfile
 from dataclasses import dataclass, field
-import logging
 from pathlib import Path
+from typing import Dict, List, Optional
+import logging
 
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document as LangChainDocument
-import PyPDF2
+from langchain_huggingface import HuggingFaceEmbeddings
+from pypdf import PdfReader
 from docx import Document
 import tiktoken
 
 from config import config
 
 
+logger = logging.getLogger(__name__)
+
+
 @dataclass
 class RAGResult:
     """RAG 처리 결과"""
+
     success: bool
     content: List[str] = field(default_factory=list)
     error_message: str = ""
 
 
+@dataclass
+class ExtractedTextBlock:
+    """문서에서 추출된 텍스트 블록과 메타데이터"""
+
+    text: str
+    metadata: Dict[str, object] = field(default_factory=dict)
+
+
 class RAGService:
-    """
-    문서 처리 및 유사성 검색을 위해 LangChain FAISS를 사용하는 간소화된 RAG 서비스
-    """
-    
-    _instance = None
-    _initialized = False
-    
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(RAGService, cls).__new__(cls)
-        return cls._instance
-    
+    """문서 처리 및 유사성 검색을 위한 RAG 서비스"""
+
     def __init__(self):
-        """HuggingFace 임베딩으로 RAG 서비스 초기화"""
-        if not RAGService._initialized:
-            self.embeddings = HuggingFaceEmbeddings(
-                model_name=config.EMBEDDING_MODEL,
-                encode_kwargs={"normalize_embeddings": config.FAISS_INDEX_TYPE == "IndexFlatIP"}
-            )
-            self.vector_store = None
-            self.logger = logging.getLogger(__name__)
-            # 토큰 기반 청크화를 위한 tiktoken 인코더 초기화
-            self.tokenizer = tiktoken.get_encoding("cl100k_base")
-            RAGService._initialized = True
-        
+        self.embeddings = HuggingFaceEmbeddings(
+            model_name=config.EMBEDDING_MODEL,
+            encode_kwargs={
+                "normalize_embeddings": config.FAISS_INDEX_TYPE == "IndexFlatIP",
+                "batch_size": config.EMBEDDING_BATCH_SIZE,
+            },
+        )
+        self.vector_store = None
+        self.logger = logger
+        self.tokenizer = tiktoken.get_encoding("cl100k_base")
+
     def process_documents(self, uploaded_files: List) -> bool:
-        """
-        업로드된 참고 문서를 처리하고 FAISS 벡터 저장소 생성
-        
-        Args:
-            uploaded_files: Streamlit에서 업로드된 파일 객체 목록
-            
-        Returns:
-            처리 성공 시 True, 실패 시 False
-        """
+        """업로드된 참고 문서를 처리하고 FAISS 벡터 저장소를 생성합니다."""
         try:
-            documents = []
-            
-            for file_obj in uploaded_files:
+            documents: List[LangChainDocument] = []
+            max_docs = getattr(config, "MAX_DOCS_PER_STUDENT", 0)
+            files_to_process = uploaded_files[:max_docs] if max_docs and max_docs > 0 else uploaded_files
+
+            for doc_index, file_obj in enumerate(files_to_process):
                 try:
-                    # 텍스트 내용 추출
-                    content = self._extract_document_content(file_obj)
-                    if content:
-                        # 청크 생성
-                        chunks = self._chunk_document(content)
-                        
-                        # LangChain Document 객체로 변환
-                        for i, chunk in enumerate(chunks):
-                            doc = LangChainDocument(
-                                page_content=chunk,
-                                metadata={"source": file_obj.name, "chunk_id": i}
+                    blocks = self._extract_document_blocks(file_obj)
+                    chunk_count = 0
+                    for block in blocks:
+                        chunks = self._chunk_document(block.text)
+                        for chunk_id, chunk in enumerate(chunks):
+                            metadata = dict(block.metadata)
+                            metadata.update(
+                                {
+                                    "source": file_obj.name,
+                                    "doc_index": doc_index,
+                                    "chunk_id": chunk_id,
+                                }
                             )
-                            documents.append(doc)
-                            
-                except Exception:
-                    # 문제가 있는 파일은 건너뛰기
+                            documents.append(LangChainDocument(page_content=chunk, metadata=metadata))
+                            chunk_count += 1
+                            if chunk_count >= config.CHUNKS_PER_DOC_LIMIT:
+                                break
+                        if chunk_count >= config.CHUNKS_PER_DOC_LIMIT:
+                            break
+                except Exception as exc:
+                    self.logger.warning("Skipping reference file during RAG processing: %s", exc)
                     continue
-            
+
             if not documents:
                 return False
-            
-            # 문서들로부터 FAISS 벡터 저장소 생성
+
             self.vector_store = FAISS.from_documents(documents, self.embeddings)
             return True
-            
-        except Exception:
+        except Exception as exc:
+            self.logger.warning("RAG document processing failed: %s", exc)
             return False
-    
+
     def search_relevant_content(self, query: str, k: Optional[int] = None) -> List[str]:
-        """
-        쿼리를 기반으로 관련 내용 검색
-        
-        Args:
-            query: 검색할 쿼리 텍스트
-            k: 검색할 유사 청크 수
-            
-        Returns:
-            관련 텍스트 청크 목록
-        """
+        """쿼리를 기반으로 관련 내용 검색"""
         try:
             if not self.vector_store or not query or not query.strip():
                 return []
-            
-            k = k or config.TOP_K_RETRIEVAL
 
-            # 유사성 검색 수행
+            k = k or config.TOP_K_RETRIEVAL
             docs = self.vector_store.similarity_search(query.strip(), k=k)
-            
-            # 문서에서 텍스트 내용 추출
-            return [doc.page_content for doc in docs]
-            
-        except Exception:
+            results = []
+            for doc in docs:
+                source = doc.metadata.get("source", "unknown")
+                page = doc.metadata.get("page")
+                prefix = f"출처: {source}"
+                if page:
+                    prefix += f" p.{page}"
+                results.append(f"{prefix}\n{doc.page_content}")
+            return results
+        except Exception as exc:
+            self.logger.warning("RAG search failed: %s", exc)
             return []
-    
+
     def process_documents_for_student(self, uploaded_files: List, student_answer: str) -> RAGResult:
-        """
-        문서를 처리하고 특정 학생 답안과 관련된 내용 검색
-        
-        Args:
-            uploaded_files: 업로드된 파일 객체 목록
-            student_answer: 검색 대상이 될 학생 답안 텍스트
-            
-        Returns:
-            성공 상태와 관련 내용이 포함된 RAGResult
-        """
+        """문서를 처리하고 특정 학생 답안과 관련된 내용 검색"""
         try:
-            # 문서가 아직 처리되지 않았다면 처리
             if not self.vector_store:
                 success = self.process_documents(uploaded_files)
                 if not success:
                     return RAGResult(success=False, error_message="문서 처리 실패")
-            
-            # 학생 답안을 쿼리로 사용하여 관련 내용 검색
+
             relevant_content = self.search_relevant_content(student_answer)
-            
-            return RAGResult(
-                success=True,
-                content=relevant_content
-            )
-            
-        except Exception as e:
-            return RAGResult(
-                success=False,
-                error_message=str(e)
-            )
-    
-    def _extract_document_content(self, file_obj) -> Optional[str]:
-        """
-        PDF 또는 DOCX 파일에서 텍스트 내용 추출
-        
-        Args:
-            file_obj: 업로드된 파일 객체
-            
-        Returns:
-            추출된 텍스트 내용 또는 추출 실패 시 None
-        """
+            return RAGResult(success=True, content=relevant_content)
+        except Exception as exc:
+            return RAGResult(success=False, error_message=str(exc))
+
+    def _extract_document_blocks(self, file_obj) -> List[ExtractedTextBlock]:
+        """PDF 또는 DOCX 파일에서 텍스트 블록과 메타데이터를 추출합니다."""
         try:
             file_extension = Path(file_obj.name).suffix.lower()
             if hasattr(file_obj, "seek"):
                 file_obj.seek(0)
-            
-            if file_extension == '.pdf':
-                return self._extract_pdf_content(file_obj)
-            elif file_extension == '.docx':
-                return self._extract_docx_content(file_obj)
-            else:
-                return None
-                
-        except Exception:
-            return None
-    
-    def _extract_pdf_content(self, file_obj) -> str:
-        """PDF 파일에서 텍스트 내용 추출"""
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+
+            if file_extension == ".pdf":
+                return self._extract_pdf_blocks(file_obj)
+            if file_extension == ".docx":
+                return self._extract_docx_blocks(file_obj)
+            return []
+        except Exception as exc:
+            self.logger.warning("Failed to extract document blocks: %s", exc)
+            return []
+
+    def _extract_pdf_blocks(self, file_obj) -> List[ExtractedTextBlock]:
+        """PDF 파일에서 페이지 단위 텍스트를 추출합니다."""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
             tmp_file.write(file_obj.read())
             tmp_file_path = tmp_file.name
-        
+
         try:
-            text_content = []
-            with open(tmp_file_path, 'rb') as pdf_file:
-                pdf_reader = PyPDF2.PdfReader(pdf_file)
-                for page in pdf_reader.pages:
-                    page_text = page.extract_text()
+            blocks: List[ExtractedTextBlock] = []
+            with open(tmp_file_path, "rb") as pdf_file:
+                pdf_reader = PdfReader(pdf_file)
+                for page_index, page in enumerate(pdf_reader.pages, 1):
+                    page_text = page.extract_text() or ""
                     if page_text.strip():
-                        text_content.append(page_text)
-            
-            return '\n\n'.join(text_content)
+                        blocks.append(
+                            ExtractedTextBlock(
+                                text=page_text,
+                                metadata={"page": page_index, "section": f"page_{page_index}"},
+                            )
+                        )
+            return blocks
         finally:
             os.unlink(tmp_file_path)
-    
-    def _extract_docx_content(self, file_obj) -> str:
-        """DOCX 파일에서 텍스트 내용 추출"""
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp_file:
+
+    def _extract_docx_blocks(self, file_obj) -> List[ExtractedTextBlock]:
+        """DOCX 파일에서 문단과 표 내용을 추출합니다."""
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".docx") as tmp_file:
             tmp_file.write(file_obj.read())
             tmp_file_path = tmp_file.name
-        
+
         try:
             doc = Document(tmp_file_path)
-            text_content = []
-            
+            blocks: List[ExtractedTextBlock] = []
+
+            paragraph_text = []
             for paragraph in doc.paragraphs:
                 if paragraph.text.strip():
-                    text_content.append(paragraph.text)
-            
-            return '\n\n'.join(text_content)
+                    paragraph_text.append(paragraph.text.strip())
+            if paragraph_text:
+                blocks.append(
+                    ExtractedTextBlock(
+                        text="\n\n".join(paragraph_text),
+                        metadata={"section": "paragraphs"},
+                    )
+                )
+
+            for table_index, table in enumerate(doc.tables, 1):
+                rows = []
+                for row in table.rows:
+                    cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                    if cells:
+                        rows.append(" | ".join(cells))
+                if rows:
+                    blocks.append(
+                        ExtractedTextBlock(
+                            text="\n".join(rows),
+                            metadata={"section": f"table_{table_index}"},
+                        )
+                    )
+            return blocks
         finally:
-            os.unlink(tmp_file_path)  
-    
+            os.unlink(tmp_file_path)
+
     def _chunk_document(
         self,
         content: str,
         chunk_tokens: Optional[int] = None,
-        overlap_tokens: Optional[int] = None
+        overlap_tokens: Optional[int] = None,
     ) -> List[str]:
-        """
-        문서 내용을 토큰 기반으로 겹침 청크로 분할 (텍스트 전처리 적용)
-        
-        Args:
-            content: 문서 텍스트 내용
-            chunk_tokens: 청크당 최대 토큰 수 (기본값: 500)
-            overlap_tokens: 청크 간 겹칠 토큰 수 (기본값: 100)
-            
-        Returns:
-            텍스트 청크 목록 (특수 문자 제거됨)
-        """
+        """문서 내용을 토큰 기반 겹침 청크로 분할합니다."""
         if not content or len(content.strip()) == 0:
             return []
 
@@ -247,91 +229,49 @@ class RAGService:
             overlap_tokens = 0
         if overlap_tokens >= chunk_tokens:
             overlap_tokens = max(0, chunk_tokens // 5)
-        
-        # 🔄 텍스트 전처리: 영어, 한글, 숫자 외 특수 문자 제거
+
         content = clean_text(content)
-        
         if not content:
             return []
-        
-        # 전체 텍스트를 토큰화
+
         tokens = self.tokenizer.encode(content)
-        
-        # 토큰이 chunk_tokens보다 적으면 전체를 하나의 청크로 반환
         if len(tokens) <= chunk_tokens:
             return [content]
-        
+
         chunks = []
         start_idx = 0
-        
         while start_idx < len(tokens):
-            # 청크 끝 인덱스 계산
             end_idx = min(start_idx + chunk_tokens, len(tokens))
-            
-            # 토큰을 텍스트로 디코딩
-            chunk_tokens_slice = tokens[start_idx:end_idx]
-            chunk_text = self.tokenizer.decode(chunk_tokens_slice)
-            
+            chunk_text = self.tokenizer.decode(tokens[start_idx:end_idx])
             if chunk_text.strip():
                 chunks.append(chunk_text.strip())
-            
-            # 다음 청크의 시작 위치 (오버랩 고려)
             start_idx += chunk_tokens - overlap_tokens
-        
         return chunks
 
 
 def clean_text(text: str) -> str:
-    """
-    텍스트에서 영어, 한글, 숫자를 제외한 불필요한 특수 문자를 제거합니다.
-    
-    Args:
-        text: 원본 텍스트
-        
-    Returns:
-        전처리된 텍스트 (영어 + 한글 + 숫자 + 기본 문장부호만 포함)
-    """
+    """의미 있는 지리 기호를 보존하면서 공백을 정리합니다."""
     if not text:
         return ""
-    
-    # 영어(a-zA-Z), 한글(가-힣ㄱ-ㅎㅏ-ㅣ), 숫자(0-9), 공백(\s), 기본 문장부호(.!?,;:\-()[]'"°%) 남기기
-    # 특수 문자(׀ؗۨ૑৉ 등)는 제거
-    cleaned = re.sub(r'[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣ\s.!?,;:\-\(\)\[\]\'"°%]', ' ', text)
-    
-    # 연속된 공백을 하나로 정리
-    cleaned = re.sub(r'\s+', ' ', cleaned)
-    
-    return cleaned.strip()
+
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"[^a-zA-Z0-9가-힣ㄱ-ㅎㅏ-ㅣ\s.!?,;:\-\(\)\[\]'\"°%℃㎜㎞㎡·→←↑↓/\\|+=<>~]", " ", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def create_rag_service() -> RAGService:
-    """
-    RAG 서비스 인스턴스를 생성하는 팩토리 함수
-    
-    Returns:
-        구성된 RAG 서비스 인스턴스
-    """
     return RAGService()
 
 
 def format_retrieved_content(content: List[str]) -> str:
-    """
-    LLM 프롬프트에 포함할 수 있도록 검색된 RAG 내용을 포맷팅
-    
-    Args:
-        content: 검색된 텍스트 청크 목록 (각 청크는 이미 500토큰으로 생성됨)
-        
-    Returns:
-        프롬프트 포함용으로 포맷팅된 문자열
-    """
     if not content:
         return ""
-    
+
     formatted_chunks = []
     for i, chunk in enumerate(content, 1):
-        # 청크는 이미 적절한 크기(500토큰)로 생성되었으므로 전체를 사용
         chunk_text = chunk.strip()
         if chunk_text:
             formatted_chunks.append(f"참고자료 {i}:\n{chunk_text}")
-    
     return "\n\n".join(formatted_chunks)
