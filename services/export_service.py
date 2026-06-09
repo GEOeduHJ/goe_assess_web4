@@ -1,491 +1,303 @@
-"""
-채점 결과의 Excel 파일 및 기타 내보내기 형식 생성 서비스
-결과 데이터 포맷팅 및 다운로드용 파일 생성을 처리합니다.
-"""
+"""채점 결과의 Excel 파일 및 기타 내보내기 형식 생성 서비스."""
+from __future__ import annotations
+
+import logging
+import os
+import statistics
+import tempfile
+from datetime import datetime
+from typing import Any, Dict, List
 
 import pandas as pd
-import os
-import tempfile
-from typing import List, Dict, Any
-from datetime import datetime
-import logging
+from openpyxl.utils import get_column_letter
 
 from models.result_model import GradingResult
 
 
 class ExportService:
-    """채점 결과를 다양한 형식으로 내보내는 서비스"""
-    
+    """채점 결과를 다양한 형식으로 내보내는 서비스."""
+
     def __init__(self):
-        """내보내기 서비스 초기화"""
         self.logger = logging.getLogger(__name__)
-    
+
     def create_results_excel(self, results: List[GradingResult]) -> str:
-        """
-        종합적인 채점 결과가 포함된 Excel 파일 생성
-        요구사항 6.3, 6.4 구현 - 모든 결과 데이터를 포함한 Excel 내보내기
-        
-        Args:
-            results: 내보낼 채점 결과 목록
-            
-        Returns:
-            str: 생성된 Excel 파일 경로
-            
-        Raises:
-            ValueError: 결과가 제공되지 않았거나 데이터가 유효하지 않은 경우
-            PermissionError: 임시 디렉토리에 쓸 수 없는 경우
-            Exception: 기타 파일 생성 오류
-        """
         if not results:
             raise ValueError("채점 결과가 없어 Excel 파일을 생성할 수 없습니다.")
 
         self._ensure_relative_grades(results)
-        
-        # 결과 데이터 검증
-        for i, result in enumerate(results):
+        self._validate_results(results)
+
+        temp_dir = tempfile.gettempdir()
+        if not os.access(temp_dir, os.W_OK):
+            raise PermissionError(f"임시 디렉토리에 쓰기 권한이 없습니다: {temp_dir}")
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        excel_path = os.path.join(temp_dir, f"grading_results_{timestamp}.xlsx")
+        self.logger.info("Excel 파일 생성 시작: %s", excel_path)
+
+        try:
+            with pd.ExcelWriter(excel_path, engine="openpyxl") as writer:
+                self._create_main_results_sheet(results, writer)
+                self._create_element_scores_sheet(results, writer)
+                self._create_summary_sheet(results, writer)
+                self._create_feedback_sheet(results, writer)
+        except Exception as exc:
+            raise Exception(f"Excel 파일 작성 중 오류가 발생했습니다: {exc}") from exc
+
+        if not os.path.exists(excel_path) or os.path.getsize(excel_path) == 0:
+            raise Exception("Excel 파일이 생성되지 않았거나 비어있습니다.")
+
+        self.logger.info("Excel 파일 생성 완료: %s", excel_path)
+        return excel_path
+
+    def _validate_results(self, results: List[GradingResult]) -> None:
+        for index, result in enumerate(results, 1):
             if not isinstance(result, GradingResult):
-                raise ValueError(f"결과 {i+1}번이 올바른 GradingResult 형식이 아닙니다.")
-            
-            # 필수 속성 확인
-            try:
-                # 모든 필수 속성에 대한 접근 테스트
-                _ = result.student_name
-                _ = result.student_class_number
-                _ = result.total_score
-                _ = result.total_max_score
-                _ = result.percentage
-                _ = result.grade_letter
-                _ = result.grading_time_seconds
-                _ = result.graded_at
-                _ = result.overall_feedback
-                _ = result.original_answer
-                _ = result.element_scores
-                
-                # 요소 점수 검증
-                for j, element in enumerate(result.element_scores):
-                    if not hasattr(element, 'element_name'):
-                        raise AttributeError(f"Element {j+1} missing 'element_name'")
-                    if not hasattr(element, 'score'):
-                        raise AttributeError(f"Element {j+1} missing 'score'")
-                    if not hasattr(element, 'max_score'):
-                        raise AttributeError(f"Element {j+1} missing 'max_score'")
-                    if not hasattr(element, 'percentage'):
-                        raise AttributeError(f"Element {j+1} missing 'percentage'")
-                        
-            except AttributeError as e:
-                raise ValueError(f"결과 {i+1}번에서 필수 속성이 누락되었습니다: {e}")
-            
+                raise ValueError(f"결과 {index}번이 올바른 GradingResult 형식이 아닙니다.")
             if not result.student_name.strip():
-                raise ValueError(f"결과 {i+1}번의 학생명이 비어있습니다.")
-        
-        try:
-            # 오류 처리와 함께 임시 파일 생성
-            temp_dir = tempfile.gettempdir()
-            
-            # 임시 디렉토리 쓰기 권한 확인
-            if not os.access(temp_dir, os.W_OK):
-                raise PermissionError(f"임시 디렉토리에 쓰기 권한이 없습니다: {temp_dir}")
-            
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            excel_path = os.path.join(temp_dir, f"grading_results_{timestamp}.xlsx")
-            
-            self.logger.info(f"Excel 파일 생성 시작: {excel_path}")
-            
-            # 오류 처리와 함께 Excel writer 생성
-            try:
-                with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
-                    # 메인 결과 시트
-                    self._create_main_results_sheet(results, writer)
-                    
-                    # 요소 점수 상세 시트
-                    self._create_element_scores_sheet(results, writer)
-                    
-                    # 요약 통계 시트
-                    self._create_summary_sheet(results, writer)
-                    
-                    # 피드백 시트
-                    self._create_feedback_sheet(results, writer)
-                    
-            except PermissionError as e:
-                raise PermissionError(f"Excel 파일 생성 권한이 없습니다: {e}")
-            except Exception as e:
-                raise Exception(f"Excel 파일 작성 중 오류가 발생했습니다: {e}")
-            
-            # 파일이 성공적으로 생성되었는지 확인
-            if not os.path.exists(excel_path):
-                raise Exception("Excel 파일이 생성되지 않았습니다.")
-            
-            file_size = os.path.getsize(excel_path)
-            if file_size == 0:
-                raise Exception("Excel 파일이 비어있습니다.")
-            
-            self.logger.info(f"Excel 파일 생성 완료: {excel_path} (크기: {file_size} bytes)")
-            return excel_path
-            
-        except (ValueError, PermissionError) as e:
-            # 알려진 예외 재발생
-            self.logger.error(f"Excel 파일 생성 실패: {e}")
-            raise
-        except Exception as e:
-            # 예상치 못한 오류 처리
-            error_msg = f"Excel 파일 생성 중 예상치 못한 오류가 발생했습니다: {e}"
-            self.logger.error(error_msg)
-            raise Exception(error_msg)
-    
-    def _create_main_results_sheet(self, results: List[GradingResult], writer: pd.ExcelWriter):
-        """학생 개요가 포함된 메인 결과 시트 생성"""
-        try:
-            main_data = []
-            
-            for result in results:
-                # 누락될 수 있는 데이터를 안전하게 처리
-                row = {
-                    '학생명': getattr(result, 'student_name', '') or '',
-                    '반': getattr(result, 'student_class_number', '') or '',
-                    '원본답안': getattr(result, 'original_answer', '') or '[답안 없음]',
-                    '총점': getattr(result, 'total_score', 0),
-                    '만점': getattr(result, 'total_max_score', 0),
-                    '백분율': round(getattr(result, 'percentage', 0), 1),
-                    '등급': getattr(result, '_relative_grade', '미정'),
-                    '채점시간(초)': round(getattr(result, 'grading_time_seconds', 0), 1),
-                    '채점완료시각': result.graded_at.strftime('%Y-%m-%d %H:%M:%S') if getattr(result, 'graded_at', None) else '',
-                    '전체피드백': getattr(result, 'overall_feedback', '') or '[피드백 없음]'
-                }
-                
-                # 요소 점수를 별도 컬럼으로 추가
-                element_scores = getattr(result, 'element_scores', [])
-                for element in element_scores:
-                    element_name = getattr(element, 'element_name', '알수없음') or '알수없음'
-                    row[f'{element_name}_점수'] = getattr(element, 'score', 0)
-                    row[f'{element_name}_만점'] = getattr(element, 'max_score', 0)
-                    row[f'{element_name}_백분율'] = round(getattr(element, 'percentage', 0), 1)
-                    row[f'{element_name}_판단근거'] = getattr(element, 'reasoning', '') or '[판단근거 없음]'
-                    row[f'{element_name}_피드백'] = getattr(element, 'feedback', '') or '[피드백 없음]'
-                
-                main_data.append(row)
-            
-            if not main_data:
-                raise ValueError("메인 결과 시트에 표시할 데이터가 없습니다.")
-            
-            df_main = pd.DataFrame(main_data)
-            df_main.to_excel(writer, sheet_name='채점결과', index=False)
-            
-            # 워크시트 서식 설정
-            worksheet = writer.sheets['채점결과']
-            
-            # 오류 처리와 함께 컬럼 너비 자동 조정
-            for column in df_main:
-                try:
-                    column_length = max(df_main[column].astype(str).map(len).max(), len(column))
-                    col_idx = df_main.columns.get_loc(column)
-                    if col_idx < 26:  # 간소화를 위해 A-Z 컬럼만 처리
-                        worksheet.column_dimensions[chr(65 + col_idx)].width = min(column_length + 2, 50)
-                except Exception as e:
-                    self.logger.warning(f"열 너비 조정 실패 ({column}): {e}")
-                    
-        except Exception as e:
-            raise Exception(f"메인 결과 시트 생성 실패: {e}")
-    
-    def _create_element_scores_sheet(self, results: List[GradingResult], writer: pd.ExcelWriter):
-        """Create detailed element scores sheet."""
-        try:
-            element_data = []
-            
-            for result in results:
-                element_scores = getattr(result, 'element_scores', [])
-                for element in element_scores:
-                    row = {
-                        '학생명': getattr(result, 'student_name', '') or '',
-                        '반': getattr(result, 'student_class_number', '') or '',
-                        '원본답안': getattr(result, 'original_answer', '') or '[답안 없음]',
-                        '평가요소': getattr(element, 'element_name', '') or '',
-                        '획득점수': getattr(element, 'score', 0),
-                        '만점': getattr(element, 'max_score', 0),
-                        '백분율': round(getattr(element, 'percentage', 0), 1),
-                        '판단근거': getattr(element, 'reasoning', '') or '[판단근거 없음]',
-                        '요소별피드백': getattr(element, 'feedback', '') or '[피드백 없음]',
-                        '채점시간(초)': round(getattr(result, 'grading_time_seconds', 0), 1)
+                raise ValueError(f"결과 {index}번의 학생명이 비어있습니다.")
+            for element in result.element_scores:
+                _ = element.element_name
+                _ = element.score
+                _ = element.max_score
+                _ = element.percentage
+
+    def _create_main_results_sheet(self, results: List[GradingResult], writer: pd.ExcelWriter) -> None:
+        main_data = []
+        for result in results:
+            row = {
+                "학생명": result.student_name,
+                "반": result.student_class_number,
+                "상태": getattr(result, "status", "success"),
+                "오류메시지": getattr(result, "error_message", ""),
+                "원본답안": result.original_answer or "[답안 없음]",
+                "총점": result.total_score,
+                "만점": result.total_max_score,
+                "백분율": round(result.percentage, 1),
+                "등급": result.get_relative_grade(),
+                "채점시간(초)": round(result.grading_time_seconds, 1),
+                "채점완료시각": result.graded_at.strftime("%Y-%m-%d %H:%M:%S") if result.graded_at else "",
+                "전체피드백": result.overall_feedback or "[피드백 없음]",
+            }
+            for element in result.element_scores:
+                row[f"{element.element_name}_점수"] = element.score
+                row[f"{element.element_name}_만점"] = element.max_score
+                row[f"{element.element_name}_백분율"] = round(element.percentage, 1)
+                row[f"{element.element_name}_판단근거"] = element.reasoning or "[판단근거 없음]"
+                row[f"{element.element_name}_피드백"] = element.feedback or "[피드백 없음]"
+            main_data.append(row)
+
+        df_main = pd.DataFrame(main_data)
+        df_main.to_excel(writer, sheet_name="채점결과", index=False)
+        self._auto_fit_columns(writer.sheets["채점결과"], df_main)
+
+    def _create_element_scores_sheet(self, results: List[GradingResult], writer: pd.ExcelWriter) -> None:
+        element_data = []
+        for result in results:
+            for element in result.element_scores:
+                element_data.append(
+                    {
+                        "학생명": result.student_name,
+                        "반": result.student_class_number,
+                        "상태": getattr(result, "status", "success"),
+                        "원본답안": result.original_answer or "[답안 없음]",
+                        "평가요소": element.element_name,
+                        "획득점수": element.score,
+                        "만점": element.max_score,
+                        "백분율": round(element.percentage, 1),
+                        "판단근거": element.reasoning or "[판단근거 없음]",
+                        "요소별피드백": element.feedback or "[피드백 없음]",
+                        "채점시간(초)": round(result.grading_time_seconds, 1),
                     }
-                    element_data.append(row)
-            
-            if element_data:
-                df_elements = pd.DataFrame(element_data)
-                df_elements.to_excel(writer, sheet_name='평가요소별상세', index=False)
-                
-                # Format the worksheet
-                worksheet = writer.sheets['평가요소별상세']
-                
-                # Auto-adjust column widths with error handling
-                for column in df_elements:
-                    try:
-                        column_length = max(df_elements[column].astype(str).map(len).max(), len(column))
-                        col_idx = df_elements.columns.get_loc(column)
-                        if col_idx < 26:  # Only handle A-Z columns
-                            worksheet.column_dimensions[chr(65 + col_idx)].width = min(column_length + 2, 50)
-                    except Exception as e:
-                        self.logger.warning(f"열 너비 조정 실패 ({column}): {e}")
-            else:
-                self.logger.warning("평가요소별 상세 데이터가 없어 해당 시트를 생성하지 않습니다.")
-                
-        except Exception as e:
-            raise Exception(f"평가요소별 상세 시트 생성 실패: {e}")
-    
-    def _create_summary_sheet(self, results: List[GradingResult], writer: pd.ExcelWriter):
-        """Create summary statistics sheet."""
-        import statistics
-        
-        # Overall statistics
-        total_students = len(results)
-        percentages = [getattr(r, 'percentage', 0) for r in results]
-        grading_times = [getattr(r, 'grading_time_seconds', 0) for r in results]
-        
-        avg_score = statistics.mean(percentages) if percentages else 0
-        median_score = statistics.median(percentages) if percentages else 0
-        std_score = statistics.stdev(percentages) if len(percentages) > 1 else 0
-        avg_time = statistics.mean(grading_times) if grading_times else 0
-        total_time = sum(grading_times)
-        
-        # Grade distribution
-        grade_counts = {}
+                )
+
+        if not element_data:
+            self.logger.warning("평가요소별 상세 데이터가 없어 해당 시트를 생성하지 않습니다.")
+            return
+
+        df_elements = pd.DataFrame(element_data)
+        df_elements.to_excel(writer, sheet_name="평가요소별상세", index=False)
+        self._auto_fit_columns(writer.sheets["평가요소별상세"], df_elements)
+
+    def _create_summary_sheet(self, results: List[GradingResult], writer: pd.ExcelWriter) -> None:
+        percentages = [result.percentage for result in results]
+        grading_times = [result.grading_time_seconds for result in results]
+        successful = [result for result in results if getattr(result, "status", "success") == "success"]
+        failed = [result for result in results if getattr(result, "status", "success") == "failed"]
+
+        summary_data = [
+            ["전체 통계", ""],
+            ["총 학생 수", len(results)],
+            ["성공 결과 수", len(successful)],
+            ["실패 결과 수", len(failed)],
+            ["평균 점수 (%)", round(statistics.mean(percentages), 1) if percentages else 0],
+            ["중앙값 (%)", round(statistics.median(percentages), 1) if percentages else 0],
+            ["표준편차", round(statistics.stdev(percentages), 1) if len(percentages) > 1 else 0],
+            ["평균 채점시간 (초)", round(statistics.mean(grading_times), 1) if grading_times else 0],
+            ["총 채점시간 (초)", round(sum(grading_times), 1)],
+            ["", ""],
+            ["등급 분포", "학생 수"],
+        ]
+
+        grade_counts: Dict[str, int] = {}
         for result in results:
             grade = result.get_relative_grade()
             grade_counts[grade] = grade_counts.get(grade, 0) + 1
-        
-        # Create summary data
-        summary_data = [
-            ['전체 통계', ''],
-            ['총 학생 수', total_students],
-            ['평균 점수 (%)', round(avg_score, 1)],
-            ['중앙값 (%)', round(median_score, 1)],
-            ['표준편차', round(std_score, 1)],
-            ['평균 채점시간 (초)', round(avg_time, 1)],
-            ['총 채점시간 (초)', round(total_time, 1)],
-            ['', ''],
-            ['등급 분포', '학생 수'],
-        ]
-        
-        for grade in ['1', '2', '3', '4', '5']:
+        for grade in ["1", "2", "3", "4", "5"]:
             count = grade_counts.get(grade, 0)
-            percentage = (count / total_students * 100) if total_students > 0 else 0
-            summary_data.append([f'{grade}등급', f'{count}명 ({percentage:.1f}%)'])
-        
-        # Element performance statistics
+            percentage = (count / len(results) * 100) if results else 0
+            summary_data.append([f"{grade}등급", f"{count}명 ({percentage:.1f}%)"])
+
         if results and results[0].element_scores:
-            summary_data.extend([
-                ['', ''],
-                ['평가요소별 통계', '평균 점수 (%)']
-            ])
-            
-            # Collect element performance data
-            element_data = {}
+            summary_data.extend([["", ""], ["평가요소별 통계", "평균 점수 (%)"]])
+            element_data: Dict[str, List[float]] = {}
             for result in results:
                 for element in result.element_scores:
-                    if element.element_name not in element_data:
-                        element_data[element.element_name] = []
-                    element_data[element.element_name].append(element.percentage)
-            
-            # Calculate element statistics
-            for element_name, percentages in element_data.items():
-                avg_element_score = statistics.mean(percentages)
-                summary_data.append([element_name, round(avg_element_score, 1)])
-        
-        # Create DataFrame and save
-        df_summary = pd.DataFrame(summary_data, columns=['항목', '값'])
-        df_summary.to_excel(writer, sheet_name='요약통계', index=False)
-        
-        # Format the worksheet
-        worksheet = writer.sheets['요약통계']
-        worksheet.column_dimensions['A'].width = 25
-        worksheet.column_dimensions['B'].width = 20
-    
-    def _create_feedback_sheet(self, results: List[GradingResult], writer: pd.ExcelWriter):
-        """Create detailed feedback sheet."""
-        try:
-            feedback_data = []
-            
-            for result in results:
-                # Overall feedback
-                overall_feedback = getattr(result, 'overall_feedback', '')
-                if overall_feedback and overall_feedback.strip():
-                    feedback_data.append({
-                        '학생명': getattr(result, 'student_name', '') or '',
-                        '반': getattr(result, 'student_class_number', '') or '',
-                        '원본답안': getattr(result, 'original_answer', '') or '[답안 없음]',
-                        '피드백유형': '전체피드백',
-                        '평가요소': '전체',
-                        '피드백내용': overall_feedback,
-                        '점수': f'{getattr(result, "total_score", 0)}/{getattr(result, "total_max_score", 0)}',
-                        '백분율': round(getattr(result, 'percentage', 0), 1)
-                    })
-                
-                # Element-specific feedback
-                element_scores = getattr(result, 'element_scores', [])
-                for element in element_scores:
-                    element_feedback = getattr(element, 'feedback', '')
-                    if element_feedback and element_feedback.strip():
-                        feedback_data.append({
-                            '학생명': getattr(result, 'student_name', '') or '',
-                            '반': getattr(result, 'student_class_number', '') or '',
-                            '원본답안': getattr(result, 'original_answer', '') or '[답안 없음]',
-                            '피드백유형': '요소별피드백',
-                            '평가요소': getattr(element, 'element_name', '') or '',
-                            '피드백내용': element_feedback,
-                            '점수': f'{getattr(element, "score", 0)}/{getattr(element, "max_score", 0)}',
-                            '백분율': round(getattr(element, 'percentage', 0), 1)
-                        })
-            
-            if feedback_data:
-                df_feedback = pd.DataFrame(feedback_data)
-                df_feedback.to_excel(writer, sheet_name='상세피드백', index=False)
-                
-                # Format the worksheet
-                worksheet = writer.sheets['상세피드백']
-                
-                # Set column widths with error handling
-                column_widths = {
-                    'A': 15,  # 학생명
-                    'B': 10,  # 반
-                    'C': 40,  # 원본답안
-                    'D': 15,  # 피드백유형
-                    'E': 20,  # 평가요소
-                    'F': 60,  # 피드백내용
-                    'G': 15,  # 점수
-                    'H': 10   # 백분율
-                }
-                
-                for col, width in column_widths.items():
-                    try:
-                        worksheet.column_dimensions[col].width = width
-                    except Exception as e:
-                        self.logger.warning(f"열 너비 설정 실패 ({col}): {e}")
-            else:
-                self.logger.warning("피드백 데이터가 없어 상세피드백 시트를 생성하지 않습니다.")
-                
-        except Exception as e:
-            raise Exception(f"상세피드백 시트 생성 실패: {e}")
-    
+                    element_data.setdefault(element.element_name, []).append(element.percentage)
+            for element_name, values in element_data.items():
+                summary_data.append([element_name, round(statistics.mean(values), 1)])
+
+        df_summary = pd.DataFrame(summary_data, columns=["항목", "값"])
+        df_summary.to_excel(writer, sheet_name="요약통계", index=False)
+        self._auto_fit_columns(writer.sheets["요약통계"], df_summary)
+
+    def _create_feedback_sheet(self, results: List[GradingResult], writer: pd.ExcelWriter) -> None:
+        feedback_data = []
+        for result in results:
+            if result.overall_feedback and result.overall_feedback.strip():
+                feedback_data.append(
+                    {
+                        "학생명": result.student_name,
+                        "반": result.student_class_number,
+                        "상태": getattr(result, "status", "success"),
+                        "원본답안": result.original_answer or "[답안 없음]",
+                        "피드백유형": "전체피드백",
+                        "평가요소": "전체",
+                        "피드백내용": result.overall_feedback,
+                        "점수": f"{result.total_score}/{result.total_max_score}",
+                        "백분율": round(result.percentage, 1),
+                    }
+                )
+            for element in result.element_scores:
+                if element.feedback and element.feedback.strip():
+                    feedback_data.append(
+                        {
+                            "학생명": result.student_name,
+                            "반": result.student_class_number,
+                            "상태": getattr(result, "status", "success"),
+                            "원본답안": result.original_answer or "[답안 없음]",
+                            "피드백유형": "요소별피드백",
+                            "평가요소": element.element_name,
+                            "피드백내용": element.feedback,
+                            "점수": f"{element.score}/{element.max_score}",
+                            "백분율": round(element.percentage, 1),
+                        }
+                    )
+
+        if not feedback_data:
+            self.logger.warning("피드백 데이터가 없어 상세피드백 시트를 생성하지 않습니다.")
+            return
+
+        df_feedback = pd.DataFrame(feedback_data)
+        df_feedback.to_excel(writer, sheet_name="상세피드백", index=False)
+        self._auto_fit_columns(writer.sheets["상세피드백"], df_feedback, max_width=70)
+
     def format_results_for_export(self, results: List[GradingResult]) -> Dict[str, Any]:
-        """
-        Format results data for various export purposes.
-        
-        Args:
-            results: List of grading results
-            
-        Returns:
-            Dict containing formatted data for export
-        """
         if not results:
             return {}
 
         self._ensure_relative_grades(results)
-        
-        import statistics
-        
-        # Calculate summary statistics
-        total_students = len(results)
-        percentages = [r.percentage for r in results]
-        times = [r.grading_time_seconds for r in results]
-        
+        percentages = [result.percentage for result in results]
+        times = [result.grading_time_seconds for result in results]
         summary_stats = {
-            'total_students': total_students,
-            'average_score': statistics.mean(percentages),
-            'median_score': statistics.median(percentages),
-            'std_deviation': statistics.stdev(percentages) if len(percentages) > 1 else 0,
-            'min_score': min(percentages),
-            'max_score': max(percentages),
-            'average_time': statistics.mean(times),
-            'total_time': sum(times)
+            "total_students": len(results),
+            "success_count": sum(1 for result in results if getattr(result, "status", "success") == "success"),
+            "failed_count": sum(1 for result in results if getattr(result, "status", "success") == "failed"),
+            "average_score": statistics.mean(percentages),
+            "median_score": statistics.median(percentages),
+            "std_deviation": statistics.stdev(percentages) if len(percentages) > 1 else 0,
+            "min_score": min(percentages),
+            "max_score": max(percentages),
+            "average_time": statistics.mean(times),
+            "total_time": sum(times),
         }
-        
-        # Grade distribution
-        grade_distribution = {}
+
+        grade_distribution: Dict[str, int] = {}
         for result in results:
-            grade = result.grade_letter
+            grade = result.get_relative_grade()
             grade_distribution[grade] = grade_distribution.get(grade, 0) + 1
-        
-        # Element performance
-        element_performance = {}
+
+        element_performance: Dict[str, Any] = {}
         if results[0].element_scores:
+            raw_element_values: Dict[str, List[float]] = {}
             for result in results:
                 for element in result.element_scores:
-                    if element.element_name not in element_performance:
-                        element_performance[element.element_name] = []
-                    element_performance[element.element_name].append(element.percentage)
-            
-            # Calculate element statistics
-            for element_name in element_performance:
-                percentages = element_performance[element_name]
+                    raw_element_values.setdefault(element.element_name, []).append(element.percentage)
+            for element_name, values in raw_element_values.items():
                 element_performance[element_name] = {
-                    'average': statistics.mean(percentages),
-                    'median': statistics.median(percentages),
-                    'std_deviation': statistics.stdev(percentages) if len(percentages) > 1 else 0,
-                    'min': min(percentages),
-                    'max': max(percentages)
+                    "average": statistics.mean(values),
+                    "median": statistics.median(values),
+                    "std_deviation": statistics.stdev(values) if len(values) > 1 else 0,
+                    "min": min(values),
+                    "max": max(values),
                 }
-        
-        # Student details
+
         student_details = []
         for result in results:
-            student_detail = {
-                'name': result.student_name,
-                'class_number': result.student_class_number,
-                'original_answer': result.original_answer,
-                'total_score': result.total_score,
-                'total_max_score': result.total_max_score,
-                'percentage': result.percentage,
-                'grade': result.grade_letter,
-                'grading_time': result.grading_time_seconds,
-                'graded_at': result.graded_at.isoformat() if result.graded_at else None,
-                'overall_feedback': result.overall_feedback,
-                'element_scores': [
-                    {
-                        'element_name': element.element_name,
-                        'score': element.score,
-                        'max_score': element.max_score,
-                        'percentage': element.percentage,
-                        'feedback': element.feedback
-                    }
-                    for element in result.element_scores
-                ]
-            }
-            student_details.append(student_detail)
-        
+            student_details.append(
+                {
+                    "name": result.student_name,
+                    "class_number": result.student_class_number,
+                    "status": getattr(result, "status", "success"),
+                    "error_message": getattr(result, "error_message", ""),
+                    "original_answer": result.original_answer,
+                    "total_score": result.total_score,
+                    "total_max_score": result.total_max_score,
+                    "percentage": result.percentage,
+                    "grade": result.get_relative_grade(),
+                    "grading_time": result.grading_time_seconds,
+                    "graded_at": result.graded_at.isoformat() if result.graded_at else None,
+                    "overall_feedback": result.overall_feedback,
+                    "element_scores": [
+                        {
+                            "element_name": element.element_name,
+                            "score": element.score,
+                            "max_score": element.max_score,
+                            "percentage": element.percentage,
+                            "feedback": element.feedback,
+                            "reasoning": element.reasoning,
+                        }
+                        for element in result.element_scores
+                    ],
+                }
+            )
+
         return {
-            'summary_statistics': summary_stats,
-            'grade_distribution': grade_distribution,
-            'element_performance': element_performance,
-            'student_details': student_details,
-            'export_timestamp': datetime.now().isoformat()
+            "summary_statistics": summary_stats,
+            "grade_distribution": grade_distribution,
+            "element_performance": element_performance,
+            "student_details": student_details,
+            "export_timestamp": datetime.now().isoformat(),
         }
-    
+
     def generate_download_link(self, file_path: str) -> str:
-        """
-        Generate download link for exported file.
-        
-        Args:
-            file_path: Path to the file to download
-            
-        Returns:
-            str: Download link or file path
-        """
-        # In a real implementation, this would generate a proper download URL
-        # For Streamlit, we'll return the file path for use with st.download_button
         return file_path
 
     def _ensure_relative_grades(self, results: List[GradingResult]) -> None:
-        """모든 export 경로에서 상대등급이 먼저 설정되도록 보장합니다."""
         grade_mapping = GradingResult.calculate_relative_grades(results)
         for result in results:
             key = f"{result.student_name}_{result.student_class_number}"
             if key in grade_mapping:
                 result.set_relative_grade(grade_mapping[key])
 
+    def _auto_fit_columns(self, worksheet, dataframe: pd.DataFrame, max_width: int = 50) -> None:
+        for column_index, column_name in enumerate(dataframe.columns, 1):
+            try:
+                column_length = max(dataframe[column_name].astype(str).map(len).max(), len(str(column_name)))
+                worksheet.column_dimensions[get_column_letter(column_index)].width = min(column_length + 2, max_width)
+            except Exception as exc:
+                self.logger.warning("열 너비 조정 실패 (%s): %s", column_name, exc)
+
 
 def create_export_service() -> ExportService:
-    """
-    Factory function to create ExportService instance.
-    
-    Returns:
-        ExportService: Configured ExportService instance
-    """
     return ExportService()
