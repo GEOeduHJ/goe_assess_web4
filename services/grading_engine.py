@@ -309,7 +309,6 @@ class SequentialGradingEngine:
             status.status = GradingStatus.NOT_STARTED
             status.error_message = None
             status.attempt_count = 0
-            previous_status = status.status
             result = self._grade_student_with_retries(
                 student_status=status,
                 rubric=rubric,
@@ -326,8 +325,6 @@ class SequentialGradingEngine:
                 if self.progress and result.status == "success":
                     self.progress.completed_students += 1
                     self.progress.failed_students = max(0, self.progress.failed_students - 1)
-                elif self.progress and previous_status != GradingStatus.FAILED:
-                    self.progress.failed_students += 1
         return new_results
 
     def validate_grading_setup(self, students: List[Student], rubric: Rubric, model_type: str, grading_type: str) -> Dict[str, Any]:
