@@ -1,13 +1,13 @@
 streamlit>=1.49.1
-google-generativeai>=0.8.5
+google-genai
 openai>=2.6.0
+pydantic>=2
 pandas>=2.3.2
 openpyxl>=3.1.5
 python-docx>=1.2.0
-pypdf2>=3.0.1
+pypdf
 plotly>=5.17.0
 python-dotenv>=1.1.1
-psutil>=5.9.0
 
 # RAG 및 임베딩 관련
 langchain-community>=0.3.0
