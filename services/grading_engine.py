@@ -153,7 +153,7 @@ class SequentialGradingEngine:
 
             results.append(result)
             processing_times.append(result.grading_time_seconds)
-            if student_status.status == GradingStatus.COMPLETED and result.status == "success":
+            if student_status.status == GradingStatus.COMPLETED and self._is_success_result(result):
                 self.progress.completed_students += 1
             else:
                 self.progress.failed_students += 1
@@ -170,6 +170,11 @@ class SequentialGradingEngine:
     def _initialize_progress_tracking(self, students: List[Student]):
         self.progress = GradingProgress(total_students=len(students), start_time=datetime.now())
         self.student_statuses = [StudentGradingStatus(student=student) for student in students]
+
+    def _is_success_result(self, result: GradingResult) -> bool:
+        if getattr(result, "status", "success") != "success":
+            return False
+        return "채점 중 오류가 발생했습니다" not in (result.overall_feedback or "")
 
     def _create_failed_result(self, student: Student, rubric: Rubric, error_message: str, elapsed: float = 0.0) -> GradingResult:
         result = GradingResult(
@@ -234,7 +239,7 @@ class SequentialGradingEngine:
                 )
                 student_status.end_time = datetime.now()
                 student_status.result = result
-                if result.status == "success":
+                if self._is_success_result(result):
                     student_status.status = GradingStatus.COMPLETED
                     return result
                 raise Exception(result.error_message or result.overall_feedback)
@@ -322,7 +327,7 @@ class SequentialGradingEngine:
             )
             if result:
                 new_results.append(result)
-                if self.progress and result.status == "success":
+                if self.progress and self._is_success_result(result):
                     self.progress.completed_students += 1
                     self.progress.failed_students = max(0, self.progress.failed_students - 1)
         return new_results
